@@ -1,7 +1,8 @@
 #25Oct27
 from importlib import reload
-import maya.cmds as cmds
-from . import shape_library as ctrl_shapes
+import maya.cmds as cmds # type: ignore
+from . import shape_library
+from . import shape_color 
 
 from ..utils import rig_utils as util
 from ..data import constants as constants
@@ -10,7 +11,7 @@ from ..naming import parser
 from ..naming import current_project
 
 reload(util)
-reload(ctrl_shapes)
+reload(shape_library)
 reload(constants)
 reload(naming)
 reload(parser)
@@ -20,7 +21,8 @@ NAME_TEMPLATE = current_project.PROJECT
 NAMER = naming.get_namer(NAME_TEMPLATE)
 
 ROTATE_ORDERS = constants.ROTATE_ORDERS
-SHAPES = ctrl_shapes.ctrl_shapes
+SHAPES = shape_library.SHAPES
+COLOR = shape_color.COLORS
 
 #Controller(objects = [], main_ctrl_grp = '', name = '', side = '', offset_names = None, shape = 'crossCircle', color = 'red', scale = 1.0, line_width = 1.0, gimbal = False, connection_type = 'parentScale', rotate_order = 'zyx', lock_attrs = None, shape_rotation = None, temp = False, fk_chain = False , bind_jnt = False, bind_grp = '')
 class Controller:
