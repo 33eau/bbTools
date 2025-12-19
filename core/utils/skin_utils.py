@@ -18,7 +18,7 @@ NAMER = naming.get_namer(NAME_TEMPLATE)
 
 def get_skin_cluster_name(object):
 	shape = cmds.listRelatives( object, s=True, f=True)[0]
-	history = cmds.listHistory(shape, lv = 3)
+	history = cmds.listHistory(shape)
 	skin_cluster_nodes = cmds.ls(history, typ = 'skinCluster')
 	if not skin_cluster_nodes:
 		cmds.warning(f"{object} has not been skinned.")
@@ -179,13 +179,19 @@ def import_skin_weight(objects=None, search_for=None, replace_with=None, prefix=
 		print( f'noDataObjs : {no_data_list}')
 	print(f'{len(skin_nodes)} has been imported.')
 
-def name_it():
-	objects = cmds.ls(sl=True)
+def name_it(objects):
+	if not objects:
+		objects = cmds.ls(sl=True)
 	for obj in objects:
-		skc = get_skin_cluster_name(obj)
-		type = cmds.objectType(skc)
+		if not cmds.objectType(obj) == 'skinCluster':
+			skc = get_skin_cluster_name(obj)
+		else:
+			skc = obj
+			obj = cmds.listConnections(f'{skc}.input[0].inputGeometry')[0]
 		base, element, number, side, suffix = NAMER.extract(obj) 
-		node_name = NAMER.format(base, element, number, side, templates.TYPE_SUFFIX[type])
+		element = element if element else []
+		element.append(suffix)
+		node_name = NAMER.format(base, element, number, side, templates.TYPE_SUFFIX['skinCluster'])
 		skc = cmds.rename(skc, node_name)
 	return
 

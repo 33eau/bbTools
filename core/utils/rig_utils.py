@@ -3,6 +3,7 @@ from importlib import reload
 import maya.cmds as cmds
 import maya.OpenMaya as om
 
+from ..controllers import shape_color 
 from ..data import constants as constants
 from ..naming import namer_factory as naming 
 from ..naming import parser
@@ -18,6 +19,7 @@ NAMER = naming.get_namer(NAME_TEMPLATE)
 
 CONSTRAINT_TYPES = constants.CONSTRAINT_TYPES
 AXIS = constants.AXIS_MAP
+COLORS = shape_color.COLORS
 
 # -----------------------------------------------------------11--------
 # Naming helpers, Fundamental helpers
@@ -257,13 +259,18 @@ def create_constrain( parents=[], target=None, type="pac", maintain_offset=True,
 	if not parents or not target:
 		raise ValueError("create_constrain requires parents and target.")
 	
-	# base_name = str(target).split("_")[0]
-	# obj_type = str(target).split("_")[-1].capitalize()
 	node_suffix = CONSTRAINT_TYPES.get(type, [""])[0]
 
 	base, element, number, side, suffix = NAMER.extract(target)
 	constrain_node_name = NAMER.format(base, element , number, side, node_suffix)
 	objects = parents + [target]
+
+	change_interp_type = False
+	if len(parents) > 1:
+		change_interp_type = True
+		if type == 'point':
+			change_interp_type = False
+
 	if snap:
 		temp_constraint = getattr(cmds, f"{type}Constraint")(parents, target, mo = False)
 		cmds.delete(temp_constraint)
@@ -273,10 +280,15 @@ def create_constrain( parents=[], target=None, type="pac", maintain_offset=True,
 		scc_name = NAMER.format(base, element , number, side, 'scc')
 		pac_node = cmds.parentConstraint(objects, mo = maintain_offset, n = pac_name)
 		scc_node = cmds.scaleConstraint(objects, mo = maintain_offset, n = scc_name)
+		if change_interp_type:
+			cmds.setAttr( f'{pac_node[0]}.interpType', 2)
+			cmds.setAttr( f'{scc_node[0]}.interpType', 2)
 		return [pac_node, scc_node]
 	
 	if type in ["point", "parent", "orient", "scale"]:
 		constrain_node = getattr(cmds, f"{type}Constraint")(parents, target, mo = maintain_offset, n = constrain_node_name)
+		if change_interp_type:
+			cmds.setAttr( f'{constrain_node[0]}.interpType', 2)
 		return [constrain_node]
 
 	raise ValueError(f"Invalid constraint type: {type}")
@@ -335,10 +347,11 @@ def create_offset_group(objects=None, offset_names=["Zro"]):
 			pass
 
 		base, element, number, side, suffix = NAMER.extract(obj)
-		print(element)
-		for sec_elem in templates.SECONDARY_ELEM:
-			if sec_elem.lower() in element:
-				element.remove(sec_elem.lower())
+		if element:
+			element = element.lower()
+			for token in templates.STRIP_TOKENS:
+				if token in element:
+					element.remove(token)
 		element = element if element else []
 		offset_groups = []
 		for i, offset_name in enumerate(offset_names):
@@ -359,7 +372,7 @@ def create_offset_group(objects=None, offset_names=["Zro"]):
 
 def set_color(objects=[], color='red', viewport=True, outliner=False, *args):
 	objects = objects or cmds.ls(sl=True) or []
-	rgb = constants.COLORS[color]
+	rgb = COLORS[color]
 	for obj in objects:
 		if viewport:
 			try:
@@ -585,16 +598,11 @@ def space_switch(parentA = 'top_ctrl', parentB = 'base_ctrl', attr = 'followPosi
 		target_grp = create_offset_group([ctrl], offset_names=['Space'])
 		target_grp = target_grp[ctrl][0]
 
-	name = get_name(target_grp)
-	for elem in templates.SECONDARY_ELEM:
-		if elem in name:
-			name = name.replace(elem,'')
-	side = get_side(target_grp)
-	attr_name = attr[0].capitalize()
-	attr_name = attr_name+attr[1:]
+	base, element, number, side, suffix = NAMER.extract(target_grp)
+	element = element if element else []
 
-	world_grp = cmds.group(em=True, n=f'{name}{attr_name}Wor{side}_grp')
-	local_grp = cmds.group(em=True, n=f'{name}{attr_name}Loc{side}_grp')
+	world_grp = create_node('group', base, element + [follow_type, 'wor'], number, side, suffix)
+	local_grp = create_node('group', base, element + [follow_type, 'loc'], number, side, suffix)
 	cmds.matchTransform(world_grp, target_grp)
 	cmds.matchTransform(local_grp, target_grp)
 	create_constrain([parentA], local_grp)
@@ -605,7 +613,7 @@ def space_switch(parentA = 'top_ctrl', parentB = 'base_ctrl', attr = 'followPosi
 	if not cmds.attributeQuery(attr, node=ctrl, exists=True):
 		cmds.addAttr( ctrl, ln = attr, at = 'float', min = 0, max = 1, dv = 0, k = True )
 
-	switch_rev = cmds.createNode('reverse', n = f'{name}SpaceSwitch{side}_rev')
+	switch_rev = create_node('reverse', base, ['space'], None, side)
 	cmds.connectAttr(f'{ctrl}.{attr}', f'{switch_rev}.ix')
 	cmds.connectAttr(f'{switch_rev}.ox', f'{cons}.{local_grp}W0')
 	cmds.connectAttr(f'{ctrl}.{attr}', f'{cons}.{world_grp}W1')
