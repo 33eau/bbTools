@@ -22,6 +22,7 @@ class DefaultNamer(BaseNamer):
 	def extract(self, full_name):
 		"""
 			Extract components using helpers.
+			base, element, number, side, suffix = extract(obj)
 		"""
 		base = parser.get_base_name(full_name, base_number = False)
 		if '_' in base:
@@ -36,6 +37,9 @@ class DefaultNamer(BaseNamer):
 		return (base, element, number, side, suffix)
 
 	def format(self, base, element, number, side, suffix):
+		"""
+			formatted_name = format(base, element, number, side, suffix)
+		"""
 		formatted_side = parser.format_side(side, self.side_case)
 		mid_side = parser.format_side(side, 'upper')
 		if mid_side == 'M':

@@ -36,9 +36,9 @@ SIDE_OUTPUT = {
 	}
 }
 
-SECONDARY_ELEM = ['Offset', 'Zro', 'Jnt', 'Ctrl', 'Space', 'Bnd']
+STRIP_TOKENS = ['offset', 'zro', 'jnt', 'ctrl', 'space', 'bnd']
 
-ELEMENTS = ['Fk', 'Ik', 'Spline', 'Ribbon', 'Offset', 'Zro', 'Space', 'Bnd', 'Tweak']
+ELEMENTS = ['Fk', 'Ik', 'Spline', 'Ribbon', 'Tweaker', 'Space' ]
 
 SIDES = ['l_', 'LFT', 'r_', 'RGT']
 
@@ -51,6 +51,8 @@ TYPE_SUFFIX={
 'skinCluster'       	: 'skc',
 'group'         		: 'grp',
 'locator'      			: 'loc',
+'ikHandle'				: 'ikh',
+'ikEffector'			: 'eff',
 
 'addDoubleLinear'   	: 'adl',
 'blendColors'       	: 'bcl',

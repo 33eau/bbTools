@@ -2,6 +2,7 @@ from importlib import reload
 import maya.cmds as cmds
 from .utils import rig_utils as bb
 from .controllers import creator as bc
+from .controllers import shape_color
 from .data import constants 
 from .naming import namer_factory as naming
 from .naming import current_project
@@ -10,6 +11,7 @@ from .naming import parser
 reload(bb )
 reload(bc)
 reload(constants)
+reload(shape_color)
 reload(naming)
 reload(current_project)
 reload(parser)
@@ -27,8 +29,8 @@ class FKRig:
 				squash=False,
 				aim_axis='x',
 				offset_names=[],
-				ctrl_shape='crossCircle',
-				ctrl_color=None,
+				shape='crossCircle',
+				color=None,
 				connection_type='parent',
 				stretch_attr = 'stretch',
 				squash_attr = 'squash',
@@ -40,7 +42,7 @@ class FKRig:
 		self.stretch = stretch
 		self.squash = squash
 		self.offset_names = offset_names
-		self.ctrl_shape =  ctrl_shape
+		self.shape =  shape
 		self.aim_axis =  aim_axis
 		self.connection_type = connection_type
 		self.stretch_attr =  stretch_attr
@@ -57,14 +59,12 @@ class FKRig:
 		else:
 			self.side = side
 		
-		if ctrl_color is None:
+		if color is None:
 			formatted_side = parser.format_side(self.side, 'upper')
-			color = constants.CTRL_COLOR.get(formatted_side, [0,5, 0.5, 0.5])
-			self.ctrl_color = color
+			color = shape_color.CTRL_COLOR.get(formatted_side, [0,5, 0.5, 0.5])
+			self.color = color
 		else: 
-			self.ctrl_color =  ctrl_color 
-
-
+			self.color =  color 
 
 		self.fk_ctrls, self.fk_groups = self._build()
 
@@ -75,8 +75,8 @@ class FKRig:
 						name = self.rig_name, 
 						side = self.side, 
 						offset_names = self.offset_names, 
-						shape = self.ctrl_shape, 
-						color = self.ctrl_color, 
+						shape = self.shape, 
+						color = self.color, 
 						connection_type = self.connection_type ,
 						fk_chain = True , 
 						**self.controller_kwargs)
@@ -157,8 +157,8 @@ class FKRig:
 # 				squash = True,
 # 				aim_axis = 'x',
 # 				offset_names = ['offset'],
-# 				ctrl_shape = 'crossCircle',
-# 				ctrl_color = 'pink',
+# 				shape = 'crossCircle',
+# 				color = 'pink',
 # 				connection_type = 'parent',
 # 				scale = 10,
 # 				shape_rotation = [0, 0, 90]
