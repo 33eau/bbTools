@@ -18,7 +18,7 @@ NAME_TEMPLATE = current_project.PROJECT
 NAMER = naming.get_namer(NAME_TEMPLATE)
 
 CONSTRAINT_TYPES = constants.CONSTRAINT_TYPES
-AXIS = constants.AXIS_MAP
+AXIS_MAP = constants.AXIS_MAP
 COLORS = shape_color.COLORS
 
 # -----------------------------------------------------------11--------
@@ -58,29 +58,71 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 	#print(f'created {node_name}')
 	return named_node
 
-def get_side(object, krt=False):
-	name = str(object)
-	for side_key, (tokens, short_name) in SIDE_MAP.items():
-		for token in tokens:
-			if token in name:
-				return tokens[1] if krt else tokens[0]
-	return "m" if krt else ""
+# def get_side(object, krt=False):
+# 	name = str(object)
+# 	for side_key, (tokens, short_name) in SIDE_MAP.items():
+# 		for token in tokens:
+# 			if token in name:
+# 				return tokens[1] if krt else tokens[0]
+# 	return "m" if krt else ""
 
-def get_name(object):
-	full_name = object.split("_")[0]
-	side = get_side(full_name)
-	if side:
-		base_name = full_name.replace(side, "")
-	else:
-		base_name = full_name
-	return base_name
+# def get_name(object):
+# 	full_name = object.split("_")[0]
+# 	side = get_side(full_name)
+# 	if side:
+# 		base_name = full_name.replace(side, "")
+# 	else:
+# 		base_name = full_name
+# 	return base_name
 
-def get_name_type(object):
-	return str(object).split("_")[-1]
+def normalize_axis(axis):
+	if isinstance(axis, tuple):
+		for ax, val in AXIS_MAP.items():
+			if axis == val[0]:
+				result = ax
+	if isinstance(axis, str):
+		if axis not in AXIS_MAP:
+			raise ValueError(f"Invalid axis string: {axis}")
+		result = axis
+	if isinstance(axis, int):
+		for ax, val in AXIS_MAP.items():
+			if axis == val[1]:
+				result = ax
+	return result
 
-def get_node_type(object):
-	obj_type = cmds.objectType(cmds.listRelatives( object, s=True )[0])
-	return obj_type
+def axis_convert(axis = None, return_type = ''):
+	"""
+	:param axis: input axis
+	:param return_type: index, letter, absolute_letter, vector, ik_twist_index, ik_twist_up_index
+	"""
+
+	formatted_axis = normalize_axis(axis)
+	if return_type == 'letter':
+		result = formatted_axis
+
+	elif return_type == 'absolute_letter':
+		result = formatted_axis.strip('-')
+
+	elif return_type == 'index':
+		result = AXIS_MAP[formatted_axis][1]
+
+	elif return_type == 'vector':
+		result = AXIS_MAP[formatted_axis][0]
+
+	elif return_type == 'ik_twist_index':
+		result = AXIS_MAP[formatted_axis][2]
+
+	elif return_type == 'ik_twist_up_index':
+		result = AXIS_MAP[formatted_axis][3]
+		
+	return  result
+
+# def get_name_type(object):
+# 	return str(object).split("_")[-1]
+
+def get_node_type(obj):
+	shapes = cmds.listRelatives(obj, s=True)
+	return cmds.objectType(shapes[0] if shapes else obj)
 
 def node_object_type(node):
 	try:
@@ -201,9 +243,8 @@ def create_joint_on_curve(curve='', joint_num=20, fk=True, aim_axis='', up_axis=
 
 def create_curve_from_joints(top_joint='', name='', degree=3):
 
-	side = get_side(name)
+	base, element, number, side, suffix = NAMER.extract(side = top_joint[0])
 	positions=[]
-
 	joint_chain = cmds.listRelatives(top_joint, ad=True, type='joint')
 	joint_chain.append(top_joint)
 	joint_chain.reverse()
@@ -211,8 +252,9 @@ def create_curve_from_joints(top_joint='', name='', degree=3):
 	for jnt in joint_chain:
 		position = cmds.xform(jnt, q=True, ws=True, t=True)
 		positions.append(position)
-
-	curve = cmds.curve(p=positions, d=degree, n=f'{name}{side}_crv')
+	curve_name = NAMER.format(name, element, number, side, 'crv')
+	curve = cmds.curve(p=positions, d=degree)
+	curve = cmds.rename(curve, curve_name)
 	return curve
 
 # -------------------------------------------------------------------
@@ -296,6 +338,10 @@ def create_constrain( parents=[], target=None, type="pac", maintain_offset=True,
 # -------------------------------------------------------------------
 # General tools
 # -------------------------------------------------------------------
+
+def sel():
+	sel = cmds.ls(sl=True)
+	return sel
 
 def snap(parents=[], target=None):
 	if not target:
@@ -568,29 +614,6 @@ def reset_value(all=True, attrs = []): #25Nov18
 					cmds.setAttr( f'{obj}.{attr}', 0 )
 				except:
 					print(f'{obj}.{attr}: cannot be reset. Skipped')
-
-def axisConvert(sAxis, bList=False, bIndex=False, bAttr=False):
-	if isinstance(sAxis, str):
-		if sAxis not in AXIS:
-			raise ValueError(f"Invalid axis string: {sAxis}")
-		
-		sRes = AXIS[sAxis]
-		if bList:
-			sRes = list(sRes)
-		if bIndex:
-			sRes = {'x': 0, 'y': 1, 'z': 2}.get(sAxis.replace('-', ''), None)
-		if bAttr:
-			sRes = sAxis.lstrip('-')
-	
-	elif isinstance(sAxis, tuple) and sAxis in AXIS.values():
-		sRes = next(k for k, v in AXIS.items() if v == sAxis)
-		if bAttr:
-			sRes = sRes.lstrip('-')
-	
-	else:
-		raise ValueError(f"Invalid input: {sAxis}")
-	
-	return sRes
 
 def space_switch(parentA = 'top_ctrl', parentB = 'base_ctrl', attr = 'followPosition', target_grp = '', follow_type = 'point', ctrl = 'mid_ctrl'):
 
