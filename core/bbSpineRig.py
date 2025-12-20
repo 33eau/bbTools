@@ -28,7 +28,7 @@ class SpineRig:
 				element_name=None,
 				side=None,
 				aim_axis='y',
-				up_axis='x',
+				up_axis='-z',
 				num_mid_controls = 2,
 				stretch=False,
 				squash=False,
@@ -61,7 +61,7 @@ class SpineRig:
 			raise ValueError("The 'joints' argument must be a list of at least two joint names.")
 		
 		if self.num_mid_controls >= (len(self.joints)/2):
-			cmds.error(f'The amount of middle ctrls should be less than half of rig joints. Stretchy ik may pop when using.')
+			cmds.warning(f'The amount of middle ctrls should be less than half of rig joints. Stretchy ik may pop when using mid ctrls.')
 
 		if side is None:
 			side = parser.find_element(self.joints[0], 'sides')
@@ -86,8 +86,8 @@ class SpineRig:
 		self.module_grp = bb.create_node('group', self.rig_name, ['Mod'], side = self.side )
 		self.controller_grp = bb.create_node('group', self.rig_name, ['Ctrl'], side = self.side )
 
-		ik_mod_grp = bb.create_node('group', self.rig_name, ['ik', 'Mod'], side=self.side)
-		ik_ctrl_grp = bb.create_node('group', self.rig_name, ['ik', 'Ctrl'], side=self.side)
+		ik_mod_grp = bb.create_node('group', self.rig_name, ['ik', 'Mod'], side=self.side, p =self.module_grp)
+		ik_ctrl_grp = bb.create_node('group', self.rig_name, ['ik', 'Ctrl'], side=self.side, p=self.controller_grp)
 		bb.create_constrain([self.global_ctrl], ik_ctrl_grp, 'psc')
 
 		if not self.rig_on_provided_joints:
@@ -96,7 +96,6 @@ class SpineRig:
 
 		rig_jnts = joints[element_names[0]]
 		cmds.parent(rig_jnts[0], ik_mod_grp)
-
 
 		ikh, eff, ik_crv = cmds.ikHandle(sj=rig_jnts[0], ee=rig_jnts[-1], sol='ikSplineSolver', pcv=False)
 		ikh_name = NAMER.format(self.rig_name, ['Spline'], None, self.side, templates.TYPE_SUFFIX['ikHandle'])
@@ -116,15 +115,26 @@ class SpineRig:
 			cmds.connectAttr(f'{jnt}.s', f'{bind_joints[i]}.s')
 			cmds.setAttr( f'{bind_joints[i]}.radius', self.scale * 3)
 		cmds.delete(self.joints)
+		cmds.hide(bind_joints)
 		
 		cv_count = bb.get_cv_count(ik_crv)
 		cv_joints = []
-		for cv in range(0, cv_count+1):
-			cmds.select(cl=True)
-			position = cmds.xform(f'{ik_crv}.cv[{cv}]', ws=True, q = True, t=True)
-			cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{cv+1:02d}', side=self.side, p=position, rad=2)
-			cmds.makeIdentity(cv_jnt, a=True, r=True)
-			cv_joints.append(cv_jnt)
+		if self.num_mid_controls > 1:
+			for cv in range(0, cv_count+1):
+				cmds.select(cl=True)
+				position = cmds.xform(f'{ik_crv}.cv[{cv}]', ws=True, q = True, t=True)
+				cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{cv+1:02d}', side=self.side, p=position, rad=2)
+				cmds.makeIdentity(cv_jnt, a=True, r=True)
+				cv_joints.append(cv_jnt)
+		else:
+			pos_parameters = [0.0, 0.5, 1.0]
+			tmp_point_poc = bb.create_node('pointOnCurveInfo', 'temp', [], None, None)
+			cmds.connectAttr(f'{ik_crv}Shape.worldSpace[0]', f'{tmp_point_poc}.inputCurve')
+			for i in range(0, 3):
+				cmds.setAttr( f'{tmp_point_poc}.parameter', pos_parameters[i])
+				position = cmds.getAttr(f'{tmp_point_poc}.position')[0]
+				cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{i+1:02d}', side=self.side, p=position, rad=2)
+				cv_joints.append(cv_jnt)
 
 		base_jnt = cv_joints[0]
 		top_jnt = cv_joints[-1]
@@ -143,7 +153,6 @@ class SpineRig:
 						**self.controller_kwargs
 						)
 		base_ctrl = baseIk_ctrl.ctrls[0]
-		base_grps = baseIk_ctrl.top_grps[0]
 
 		topIk_ctrl = bc.Controller(
 						objects = [top_jnt],
@@ -159,14 +168,13 @@ class SpineRig:
 						)
 		
 		top_ctrl = topIk_ctrl.ctrls[0]
-		top_grps = topIk_ctrl.top_grps[0]
 
 		# Ctrl Position Attr
 		target_grps = [topIk_ctrl.top_grps[0][1], baseIk_ctrl.top_grps[0][1]]
 		negative_grps = []
 		for i, ctrl in enumerate([top_ctrl, base_ctrl]):
 			target_ctrls = [top_ctrl, base_ctrl]
-			ctrl_name, element, number, side, suffix = NAMER.extract(ctrl)
+			ctrl_name, element, number, _, _ = NAMER.extract(ctrl)
 			destination_obj = target_ctrls
 			destination_obj.remove(ctrl)
 			cmds.matchTransform(ctrl, destination_obj)
@@ -216,6 +224,21 @@ class SpineRig:
 		cmds.rebuildCurve(ik_crv, ch=False, rpo = True, rt=False, end=True, kr=False, kcp=False, kep=True, kt=False, s=(self.num_mid_controls/2)+1, d=3, tol = 0.01 )
 		curve_skc = cmds.skinCluster(cv_joints, ik_crv, tsb = True, mi=3, dr=2, rui=False, nw=0, bindMethod=0 )
 		bsk.name_it(curve_skc)
+
+		# Advance Twist
+		up_ab_axis = bb.axis_convert(self.up_axis, 'absolute_letter')
+		fwd_axis_idx = bb.axis_convert(self.aim_axis, 'ik_twist_index')
+		up_axis_idx = bb.axis_convert(self.up_axis, 'ik_twist_up_index')
+		up_axis_value = -1 if '-' in self.up_axis else 1
+		cmds.setAttr( f'{ikh}.dTwistControlEnable', 1)
+		cmds.setAttr( f'{ikh}.dWorldUpType', 4)
+		cmds.setAttr( f'{ikh}.dForwardAxis', fwd_axis_idx)
+		cmds.setAttr( f'{ikh}.dWorldUpAxis', up_axis_idx)
+		cmds.setAttr( f'{ikh}.dWorldUpVector{up_ab_axis.upper()}', up_axis_value)
+		cmds.setAttr( f'{ikh}.dWorldUpVectorEnd{up_ab_axis.upper()}', up_axis_value)
+		cmds.connectAttr(f'{base_ctrl}.xformMatrix', f'{ikh}.dWorldUpMatrix', f = True )
+		cmds.connectAttr(f'{top_ctrl}.xformMatrix', f'{ikh}.dWorldUpMatrixEnd', f = True )
+
 
 		# Ik stretch
 		feature = self.stretch_attr
@@ -294,7 +317,7 @@ class SpineRig:
 				cmds.error(f'{self.squash_attr} Output is not 1 by default.')
 			
 		#Space Switch
-		all_spaces_grp = bb.create_node('group', self.rig_name, ['spaces'], side=self.side )
+		all_spaces_grp = bb.create_node('group', self.rig_name, ['spaces'], side=self.side, p=ik_mod_grp )
 		follow_type = ['point', 'orient']
 		follow_attrs = ['followPosition', 'followRotation']
 		for typ, attr in zip(follow_type, follow_attrs):
@@ -307,29 +330,25 @@ class SpineRig:
 
 
 ### Example use:
-# spine_rig = SpineRig(joints=None,
-# 					rig_name=None,
+# spine_rig = SpineRig(joints=['spineTmp01_jnt', 'spineTmp02_jnt', 'spineTmp03_jnt', 'spineTmp04_jnt', 'spineTmp05_jnt', 'spineTmp06_jnt', 'spineTmp07_jnt', 'spineTmp08_jnt'],
+# 					rig_name='spine',
 # 					element_name=None,
 # 					side=None,
 # 					aim_axis='y',
 # 					up_axis='x',
 # 					num_mid_controls = 2,
-# 					stretch=False,
-# 					squash=False,
+# 					stretch=True,
+# 					squash=True,
 # 					offset_names=[],
-# 					connection_type='parent',
 # 					stretch_attr = 'stretch',
 # 					squash_attr = 'squash',
-# 					global_ctrl = None,
+# 					global_ctrl = 'global_scale_grp',
 # 					rig_on_provided_joints = False,
 # 					scale=1.0
 # 					)
 
 
-
-
-
-
+# print('done')
 
 
 
