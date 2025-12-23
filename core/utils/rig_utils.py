@@ -394,10 +394,12 @@ def create_offset_group(objects=None, offset_names=["Zro"]):
 
 		base, element, number, side, suffix = NAMER.extract(obj)
 		if element:
-			element = element.lower()
-			for token in templates.STRIP_TOKENS:
-				if token in element:
-					element.remove(token)
+			for i, elem in enumerate(element):
+				elem = elem.lower()
+				for token in templates.STRIP_TOKENS:
+					if token in elem:
+						elem = elem.remove(token)
+						element[i] = elem
 		element = element if element else []
 		offset_groups = []
 		for i, offset_name in enumerate(offset_names):
