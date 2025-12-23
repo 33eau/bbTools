@@ -86,6 +86,7 @@ class SpineRig:
 		self.module_grp = bb.create_node('group', self.rig_name, ['Mod'], side = self.side )
 		self.controller_grp = bb.create_node('group', self.rig_name, ['Ctrl'], side = self.side )
 
+		# =============== Ik System ===============
 		ik_mod_grp = bb.create_node('group', self.rig_name, ['ik', 'Mod'], side=self.side, p =self.module_grp)
 		ik_ctrl_grp = bb.create_node('group', self.rig_name, ['ik', 'Ctrl'], side=self.side, p=self.controller_grp)
 		bb.create_constrain([self.global_ctrl], ik_ctrl_grp, 'psc')
@@ -168,6 +169,7 @@ class SpineRig:
 						)
 		
 		top_ctrl = topIk_ctrl.ctrls[0]
+		top_grp = topIk_ctrl.top_grps
 
 		# Ctrl Position Attr
 		target_grps = [topIk_ctrl.top_grps[0][1], baseIk_ctrl.top_grps[0][1]]
@@ -203,8 +205,8 @@ class SpineRig:
 			cmds.connectAttr(f'{neg_mdv}.o', f'{negative_grp}.t')
 			cmds.parent(negative_grp, ctrl)
 			negative_grps.append(negative_grp)
-		topNeg_grp = negative_grps[0]
-		baseNeg_grp = negative_grps[1]
+		# topNeg_grp = negative_grps[0]
+		# baseNeg_grp = negative_grps[1]
 
 		mid_joints = cv_joints[1:-1]
 		mid_controllers = bc.Controller(
@@ -327,9 +329,36 @@ class SpineRig:
 				follow_value = (1/(len(mid_ctrls)+1)) * (i+1)
 				cmds.setAttr( f'{ctrl}.{attr}', follow_value)
 				cmds.parent(space_grps, all_spaces_grp)
+		# =============== End of Ik System ===============
+
+		# =============== Fk System ===============
+		fk_ctrl_grp = bb.create_node('group', self.rig_name, ['fk', 'Ctrl'], side=self.side, p=self.controller_grp)
+		fk_controllers = bc.Controller(
+						objects = mid_joints,
+						main_ctrl_grp = fk_ctrl_grp,
+						name = f'{self.rig_name}Fk',
+						side = self.side,
+						offset_names = ['Zro', 'Offset'],
+						shape = 'crossCircle',
+						color = self.color,
+						scale = self.scale * 4,
+						fk_chain=True,
+						connection_type = 'None',
+						**self.controller_kwargs
+						)
+		fk_ctrls = fk_controllers.ctrls
+		fk_grp = fk_controllers.top_grps
+		bb.create_constrain([self.global_ctrl], fk_grp[0][0], type='parentScale' )
+		# =============== End of fk System ===============
 
 
-### Example use:
+		for i, fk in enumerate(fk_ctrls):
+			bb.create_constrain([fk], mid_grps[i][0] , type='parent')
+		bb.create_constrain([fk_ctrls[-1]], top_grp[0][0] , type='parent')
+
+		return
+
+# ## Example use:
 # spine_rig = SpineRig(joints=['spineTmp01_jnt', 'spineTmp02_jnt', 'spineTmp03_jnt', 'spineTmp04_jnt', 'spineTmp05_jnt', 'spineTmp06_jnt', 'spineTmp07_jnt', 'spineTmp08_jnt'],
 # 					rig_name='spine',
 # 					element_name=None,
