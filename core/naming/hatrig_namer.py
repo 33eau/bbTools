@@ -1,5 +1,6 @@
 import re
 from importlib import reload
+import maya.cmds as cmds
 
 from . import base_namer
 from . import parser
@@ -41,6 +42,23 @@ class HatRigNamer(BaseNamer):
 				element_str = element[0].lower() if element else ''
 		else: 
 			element_str = ''
+
+		# split names by upper case
+		word_range = []
+		for i, letter in enumerate (base):
+			if letter.isupper():
+				word_range.append(i)
+		word_range.append(len(base))
+
+		names = []
+		start_idx = 0
+		for i, idx in enumerate(word_range):
+			end_idx = word_range[i]
+			split_name = base[start_idx:end_idx].lower()
+			names.append(split_name)
+			start_idx = idx
+
+		base = '_'.join(names)
 		
 		context = {
 			'base': base,
@@ -54,6 +72,15 @@ class HatRigNamer(BaseNamer):
 
 		return name
 	
+	def auto(self, full_name):
+		base, element, number, side, suffix = self.extract(full_name)
+		name =  self.format(base, element, number, side, suffix)
+		# cleanup
+		new_name = self._cleanup_name(name)
+		
+		cmds.rename(full_name, new_name)
+		return name
+
 	def _cleanup_name(self, name):
 		name = re.sub('_+','_', name).strip('_')
 		return name
