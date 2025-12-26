@@ -67,8 +67,6 @@ class Controller:
 					shape_rotation = None, 
 					temp = False,
 					fk_chain = False ,
-					bind_jnt = False,   
-					bind_grp = '',
 					run = True,
 					**kwargs 
 					):
@@ -120,6 +118,7 @@ class Controller:
 				offset_groups = bb.create_offset_group(ctrl, self.offset_names)
 				top_grp = offset_groups[ctrl][0]
 				self.offset_grps.append(offset_groups[ctrl])
+				bb.snap([target], top_grp)
 
 				active_ctrl = ctrl
 				if self.gimbal:
@@ -147,9 +146,9 @@ class Controller:
 		if len(self.objects) <= 1:
 			return
 		step = 2 if self.gimbal else 1
-		for i in range(0, len(self.top_grps) - 1):
+		for i in range(0, len(self.offset_grps) - 1):
 			parent_ctrl = self.ctrls[(i * step) + (step - 1)]
-			child_grp = self.top_grps[i + 1]
+			child_grp = self.offset_grps[i + 1]
 			cmds.parent(child_grp, parent_ctrl)
 
 	@staticmethod
@@ -274,3 +273,45 @@ class SuperRoot:
 						rotate_order='zxy'
 						)
 		return ctrl
+	
+class SingleControl:
+	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', **kwargs):
+		self.target_obj =  target_obj
+		self.bind_parent = bind_parent
+		self.ctrl_parent =  ctrl_parent
+
+		self.create_joint = kwargs.get('create_joint', True)
+		
+		# Return result
+		self.single_ctrl = None
+		self.offset_grps = None
+		self.bind_jnt = None
+
+		if target_obj:
+			self.build(**kwargs)
+
+	def build(self, **kwargs):
+		name_data = get_naming_data(obj=self.target_obj)
+		base, element, number, side, suffix = NAMER.extract(self.target_obj)
+		element = element if element else []
+		drive_target = self.target_obj
+
+		if self.create_joint:
+			base_name = parser.clean_name(base, ['tmp', 'temp'])
+			self.bind_jnt = bb.create_node('joint', base_name, element+['Bnd'], number, side)
+			bb.snap(self.target_obj, self.bind_jnt)
+			if self.bind_parent and cmds.objExists(self.bind_parent):
+				cmds.parent(self.bind_jnt, self.bind_parent)
+			drive_target = self.bind_jnt
+
+		controller = Controller(
+							objects=[drive_target],
+							main_ctrl_grp=self.ctrl_parent,
+							**kwargs
+						)
+		self.single_ctrl = controller.ctrls[0]
+		self.offset_grps = controller.offset_grps
+
+
+
+
