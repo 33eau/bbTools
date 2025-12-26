@@ -359,13 +359,17 @@ class SpineRig:
 		return
 
 # ## Example use:
-# spine_rig = SpineRig(joints=['spineTmp01_jnt', 'spineTmp02_jnt', 'spineTmp03_jnt', 'spineTmp04_jnt', 'spineTmp05_jnt', 'spineTmp06_jnt', 'spineTmp07_jnt', 'spineTmp08_jnt'],
+# from bbTools.core import bbSpineRig as spine
+# reload(spine)
+# cmds.file('W:/RIG/PROJ/MAYA_PROJ/HATRIG/scenes/AUTO_RIG/spine_start.ma', open=True, f=True)
+# # ## Example use:
+# spine_rig = spine.SpineRig(joints=['spineTmp01_jnt', 'spineTmp02_jnt', 'spineTmp03_jnt', 'spineTmp04_jnt', 'spineTmp05_jnt', 'spineTmp06_jnt', 'spineTmp07_jnt', 'spineTmp08_jnt'],
 # 					rig_name='spine',
 # 					element_name=None,
 # 					side=None,
 # 					aim_axis='y',
 # 					up_axis='x',
-# 					num_mid_controls = 2,
+# 					num_mid_controls = 3,
 # 					stretch=True,
 # 					squash=True,
 # 					offset_names=[],
@@ -375,8 +379,6 @@ class SpineRig:
 # 					rig_on_provided_joints = False,
 # 					scale=1.0
 # 					)
-
-
 # print('done')
 
 
