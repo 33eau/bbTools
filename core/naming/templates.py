@@ -4,6 +4,7 @@ NAME_TEMPLATES = {
 	'side_prefix': '{side}_{base}_{number}_{element}_{suffix}',
 	# customized
 	'hatrig': '{side}_{base}_{number}_{element}_{suffix}',
+	'type_prefix' : '{suffix}_{base}_{element}_{number}_{side}'
 }
 
 SIDE_GROUPS = {
@@ -38,7 +39,7 @@ SIDE_OUTPUT = {
 
 STRIP_TOKENS = ['offset', 'zro', 'jnt', 'ctrl', 'space', 'bnd']
 
-ELEMENTS = ['Fk', 'Ik', 'Spline', 'Ribbon', 'Tweaker', 'Space' ]
+ELEMENTS = ['Fk', 'Ik', 'Spline', 'Ribbon', 'Tweaker', 'Space', 'Blueprint']
 
 SIDES = ['l_', 'LFT', 'r_', 'RGT']
 
