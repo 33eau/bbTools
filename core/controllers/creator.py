@@ -4,13 +4,13 @@ import maya.cmds as cmds # type: ignore
 from . import shape_library
 from . import shape_color 
 
-from ..utils import rig_utils as util
+from ..utils import rig_utils as bb
 from ..data import constants as constants
 from ..naming import namer_factory as naming
 from ..naming import parser
 from ..naming import current_project
 
-reload(util)
+reload(bb)
 reload(shape_library)
 reload(constants)
 reload(naming)
@@ -19,12 +19,36 @@ reload(current_project)
 
 NAME_TEMPLATE = current_project.PROJECT
 NAMER = naming.get_namer(NAME_TEMPLATE)
+SUFFIX = 'ctrl'
 
-ROTATE_ORDERS = constants.ROTATE_ORDERS
-SHAPES = shape_library.SHAPES
-COLOR = shape_color.COLORS
+CUSTOM_TEMPLATE = 'hatrig'
+CUSTOM_SUFFIX = 'ctl'
 
-#Controller(objects = [], main_ctrl_grp = '', name = '', side = '', offset_names = None, shape = 'crossCircle', color = 'red', scale = 1.0, line_width = 1.0, gimbal = False, connection_type = 'parentScale', rotate_order = 'zyx', lock_attrs = None, shape_rotation = None, temp = False, fk_chain = False , bind_jnt = False, bind_grp = '')
+
+def get_naming_data(obj=None, name_input=None, side_input =None, index=0, multiple = False, gimbal = False):
+	if name_input:
+		base = parser.get_base_name(name_input)
+		element = parser.find_element(name_input) or []
+		number = f'{index+1:02d}' if multiple else None
+		side = side_input or None
+	else:
+		base, element, number, side, suffix = NAMER.extract(obj)
+
+	if gimbal:
+		element = element.append('Gimbal')
+
+	suffix = CUSTOM_SUFFIX if NAME_TEMPLATE == CUSTOM_TEMPLATE else SUFFIX
+	ctrl_name = NAMER.format(base, element, number, side, suffix)
+
+	return {
+	'ctrl_name': ctrl_name,
+	'base': base,
+	'element': element,
+	'side': side,
+	'number': number,
+	'suffix': suffix
+	}
+
 class Controller:
 	def __init__(self, 
 					objects = [],
@@ -42,9 +66,10 @@ class Controller:
 					lock_attrs = ['v'],
 					shape_rotation = None, 
 					temp = False,
-					fk_chain = False , 
+					fk_chain = False ,
 					bind_jnt = False,   
 					bind_grp = '',
+					run = True,
 					**kwargs 
 					):
 		
@@ -64,30 +89,25 @@ class Controller:
 		self.shape_rotation = shape_rotation or [0, 0, 0]
 		self.temp = temp
 		self.fk_chain = fk_chain
-			
-		ctrls = []
-		top_grps = []
-		bind_jnts = []
-		if self.temp:
-			self.objects = cmds.spaceLocator(n='temp_loc')
 
-		for i, obj in enumerate(self.objects):
-			if self.name:
-				self.side = self.side or ''
-				num = f'{i+1:02d}' if len(self.objects) > 1 else ''
-				base = parser.get_base_name(self.name)
-				element = parser.find_element(self.name) or []
-				number = num
-				side = self.side
-			else:
-				base, element, number, side, suffix = NAMER.extract(obj)
+		self.ctrls = []
+		self.offset_grps = []
 
-			suffix = 'ctl' if NAME_TEMPLATE == 'hatrig' else 'ctrl'
-			ctrl_name = NAMER.format(base, element, number, side, suffix)
-			#print(ctrl_name)
-			
-			ctrl = self.create_curve(
-								ctrl_name = ctrl_name, 
+		if run:
+			self.build()
+
+	def build(self):
+		cmds.undoInfo(openChunk=True, chunkName="CreateController")
+		targets = self.objects
+		try:
+			if self.temp:
+				targets = cmds.spaceLocator(n='temp_loc_01')
+
+			for i, target in enumerate(targets):
+				multiple = len(self.objects) > 1
+				name_data = get_naming_data(target, self.name, self.side, i, multiple)
+				ctrl = self.create_curve(
+								ctrl_name = name_data['ctrl_name'], 
 								shape = self.shape, 
 								color=self.color, 
 								line_width=self.line_width, 
@@ -95,148 +115,162 @@ class Controller:
 								shape_rotation=self.shape_rotation, 
 								rotate_order=self.rotate_order
 								)
-			ctrls.append(ctrl)
+				self.ctrls.append(ctrl)
 
-			offset_grps = util.create_offset_group(ctrl, self.offset_names)
-			util.snap([obj], offset_grps[ctrl][0])
-			top_grps.append(offset_grps[ctrl])
+				offset_groups = bb.create_offset_group(ctrl, self.offset_names)
+				top_grp = offset_groups[ctrl][0]
+				self.offset_grps.append(offset_groups[ctrl])
 
-			if self.gimbal:
-				gimbal_ctrl = self.create_gimbal_ctrl(ctrl)
-				ctrls.append(gimbal_ctrl)
-				self.create_connection(obj, gimbal_ctrl)
-			else:
-				self.create_connection(obj, ctrl)
-
-			for attr in self.lock_attrs:
-				cmds.setAttr(f'{ctrl}.{attr}', l=False, k=False)
-			
-			if self.main_ctrl_grp:
-				cmds.parent(offset_grps[ctrl][0], self.main_ctrl_grp)
-
+				active_ctrl = ctrl
+				if self.gimbal:
+					active_ctrl = self.create_gimbal_ctrl(ctrl)
+					self.ctrls.append(active_ctrl)
 				
-		if self.fk_chain:
-			self._connect_fk_chain(ctrls, top_grps)		
+				self.create_connection(target, active_ctrl)
+				
+				for attr in self.lock_attrs:
+					cmds.setAttr(f'{ctrl}.{attr}', l=False, k=False)
 
-		if self.temp:
-			cmds.delete(self.objects)
-		
-		self.ctrls = ctrls
-		self.top_grps = top_grps
+				if self.main_ctrl_grp and cmds.objExists(self.main_ctrl_grp):
+					cmds.parent(top_grp, self.main_ctrl_grp)
 
-	def _connect_fk_chain(self, ctrls, top_grps):
-		if not self.fk_chain or len(self.objects) <= 1:
+			if self.fk_chain:
+				self._connect_fk_chain()
+			
+			if self.temp:
+				cmds.delete(targets)
+		finally:
+			cmds.undoInfo(closeChunk=True)
+		return self.ctrls
+
+	def _connect_fk_chain(self):
+		if len(self.objects) <= 1:
 			return
-		for i in range(0, len(top_grps)-1):
-			if self.gimbal:
-				parent_ctrl = ctrls[(i*2)+1]
-			else:
-				parent_ctrl = ctrls[i]
-			child_top_grp = top_grps[i+1][0]
-			cmds.parent(child_top_grp, parent_ctrl)
+		step = 2 if self.gimbal else 1
+		for i in range(0, len(self.top_grps) - 1):
+			parent_ctrl = self.ctrls[(i * step) + (step - 1)]
+			child_grp = self.top_grps[i + 1]
+			cmds.parent(child_grp, parent_ctrl)
 
 	@staticmethod
-	def create_curve(ctrl_name='', shape='crossCircle', color='red', line_width=1.0, scale=1.0, shape_rotation=None, rotate_order='zyx'):
-		shape_rotation = shape_rotation or [0, 0, 0]
-		cv_count = len(SHAPES[shape])
-		curve = cmds.curve(p=SHAPES[shape], d=1, n=f'{ctrl_name}')
-		#cmds.closeCurve(curve, ch=False, ps=False, rpo=True)
-		shape_node = cmds.listRelatives(curve, s=True)[0]
-		shape_node = cmds.rename(shape_node, f'{ctrl_name}Shape')
-		util.set_color([curve], color)
-		cmds.setAttr(f'{shape_node}.lineWidth', line_width)
-		util.scale_shape(curve, scale)
-		util.rotate_curve(curve, rotation=shape_rotation)
-		cmds.setAttr(f'{curve}.ro', ROTATE_ORDERS[rotate_order] )
-		return curve
-	
-	@staticmethod
-	def create_gimbal_ctrl(ctrl):
-		name = util.get_name(ctrl)
-		side = util.get_side(ctrl)
-		gimbal_ctrl = cmds.duplicate(ctrl, n = f'{name}Gimbal{side}_ctrl')[0]
-		util.scale_shape(gimbal_ctrl, 0.75)
-		util.set_color([gimbal_ctrl], 'white')
-		gimbal_shape = cmds.listRelatives(gimbal_ctrl, s=True)[0]
-		ctrl_shape = cmds.listRelatives(ctrl, s=True, f=True)[0]
-		cmds.addAttr( ctrl_shape, ln='gimbal', at='long', min=0, max=1, dv=0, k=True)
-		cmds.connectAttr(f'{ctrl_shape}.gimbal', f'{gimbal_shape}.v')
-		cmds.parent(gimbal_ctrl, ctrl)
+	def create_curve(ctrl_name='', 
+					shape='crossCircle', 
+					color='red', 
+					line_width=1.0, 
+					scale=1.0, 
+					shape_rotation=None, 
+					rotate_order='zyx'):
+		
+		points = shape_library.SHAPES.get(shape, shape_library.SHAPES['crossCircle'])
+		crv = cmds.curve(p=points, d=1)
+		crv = cmds.rename(crv, ctrl_name)
+		shp = cmds.listRelatives(crv, s=True)[0]
 
-		cmds.addAttr( gimbal_shape, ln = 'rotateOrder', at = 'enum', en = 'xyz:yzx:zxy:xzy:yxz:zyx' , k = True )
-		cmds.connectAttr(f'{gimbal_shape}.rotateOrder', f'{gimbal_ctrl}.rotateOrder')
+		bb.set_color([crv], color)
+		bb.scale_shape(crv, scale)
+		bb.rotate_curve(crv, rotation=shape_rotation)
 
-		return gimbal_ctrl
+		ro_value = bb.constants.ROTATE_ORDERS.get(rotate_order, 0)
+		cmds.setAttr(f'{crv}.rotateOrder', ro_value)
+
+		return crv
+
+	def create_gimbal_ctrl(self, ctrl, name_data):
+		if not name_data:
+			name_data = self.get_naming_data(obj=ctrl, gimbal=True)
+		gimbal_name = name_data['ctrl_name']
+		gimbal = cmds.duplicate(ctrl)[0]
+		gimbal = cmds.rename(gimbal, gimbal_name)
+
+		bb.scale_shape(gimbal, 0.75)
+		bb.set_color([gimbal], 'white')
+
+		# Setup Visibility Switch
+		main_shp = cmds.listRelatives(ctrl, s=True)[0]
+		gim_shp = cmds.listRelatives(gimbal, s=True)[0]
+		
+		if not cmds.attributeQuery('gimbal', n=main_shp, ex=True):
+			cmds.addAttr(main_shp, ln='gimbal', at='long', min=0, max=1, dv=0, k=True)
+		
+		cmds.connectAttr(f'{main_shp}.gimbal', f'{gim_shp}.v')
+		cmds.parent(gimbal, ctrl)
+		return gimbal	
 
 	def create_connection(self, object, ctrl):
+		if self.connection_type == 'None':
+			return
+		
 		if self.connection_type in ('point', 'parent', 'orient', 'scale', 'parentScale'):
-			util.create_constrain(parents=[ctrl], target=object, type=self.connection_type)
+			bb.create_constrain(parents=[ctrl], target=object, type=self.connection_type)
 		elif self.connection_type == 'direct':
 			if self.gimbal:
 				cmds.warning(f'Direct Connection works only when moving Gimbal Control: {self.gimbal_ctrl}')
 				util.direct_connect([self.gimbal_ctrl], [object])
 			else:
 				util.direct_connect([ctrl], [object])
-		elif self.connection_type == 'matrix_parent':
-			util.matrix_constrain(ctrl, object, 'parent')
-		elif self.connection_type == 'matrix_point':
-			util.matrix_constrain(ctrl, object, 'point')
-		elif self.connection_type == 'None':
-			pass
+		elif 'matrix' in self.connection_type:
+			mtx_type = self.connection_type.split('_')[-1]
+			util.matrix_constrain(ctrl, object, mtx_type)
 		else:
 			cmds.warning(f'Unknown connection type: {self.connection_type}')
 
 class SuperRoot:
-	super_shape = 'directionalSquare'
-	placement_shape = 'arrowOneDir'
-	ctrl_color = 'yellow'
+	def __init__(self, super_name='SuperRoot', placement_name='Placement', ctrl_scale=8, line_width = 2.0, **kwargs):
 		
-	def __init__(self, super_root_name='SuperRoot', placement_name='Placement', ctrl_scale=8, line_width =2.0, NAME_TEMPLATE = 'default'):
+		self.super_name = super_name
+		self.placement_name =  placement_name
+		self.ctrl_scale =  ctrl_scale
 		self.line_width = line_width
-		controllerGrp_name = 'Controllers'
-		modulesGrp_name = 'Modules'
-		bindGrp_name = 'BindJoints'
 
-		if cmds.objExists(f'{super_root_name}_grp'):
-			cmds.warning(f'{super_root_name}_grp already exists.')
+		self.super_shape = kwargs.get('super_shape', 'directionalSquare')
+		self.placement_shape = kwargs.get('placement_shape', 'arrowOneDir')
+		self.ctrl_color = kwargs.get('ctrl_color', 'yellow')
+
+		self.super_group_name = kwargs.get('super_group_name', 'Rig')
+		self.controller_group_name = kwargs.get('controller_group_name', 'Controllers')
+		self.modules_group_name = kwargs.get('modules_group_name', 'Modules')
+		self.bind_group_name = kwargs.get('bind_group_name', 'BindJoints')
+
+		self.super_grp = None
+		self.placement_grp = None
+		self.ctrl_grp = None
+		self.mod_grp = None
+		self.bind_grp = None
+
+		self.super_ctrl = None
+		self.placement_ctrl = None
+
+		self.build()
+
+	def build(self):
+		top_grp_name = NAMER.format(self.super_group_name, None, None, None, 'grp')
+		if cmds.objExists(top_grp_name):
+			cmds.warning(f'{top_grp_name} already exists.')
 			return
-		suffix = 'ctl' if NAME_TEMPLATE == 'hatrig' else 'ctrl'
-		super_ctrl = self.create_controller(name=super_root_name + '_' + suffix, shape=self.super_shape, scale=ctrl_scale )
-		placement_ctrl = self.create_controller(name=placement_name + '_' + suffix, shape=self.placement_shape, scale=ctrl_scale*0.6 )
-
-		super_grp = util.create_group(name=super_root_name, children=[super_ctrl])
-		placement_grp = util.create_group(name=placement_name, children=[placement_ctrl], parent_heirarchy = super_ctrl)
 		
-		controllers_grp = util.create_group(name=controllerGrp_name, parent_heirarchy=super_grp)
-		modules_grp = util.create_group(name=modulesGrp_name, parent_heirarchy=super_grp)
-		bind_grp = util.create_group(name=bindGrp_name, parent_heirarchy=super_grp)
+		self.super_grp = bb.create_node('group', self.super_group_name)
+		self.super_ctrl = self._create_master_controler(self.super_name, self.super_shape, self.ctrl_scale)
+		cmds.parent(self.super_ctrl, self.super_grp)
+		
+		self.placement_grp = bb.create_node('group', self.placement_name, p = self.super_ctrl)
+		self.placement_ctrl = self._create_master_controler(self.placement_name, self.placement_shape, self.ctrl_scale * 0.6)
+		cmds.parent(self.placement_ctrl, self.placement_grp)
 
-		util.create_constrain(parents=[placement_ctrl], target=controllers_grp, type='psc')
+		self.ctrl_grp = bb.create_group(name=self.controller_group_name, parent_heirarchy=self.super_grp)
+		self.mod_grp = bb.create_group(name=self.modules_group_name, parent_heirarchy=self.super_grp)
+		self.bind_grp = bb.create_group(name=self.bind_group_name, parent_heirarchy=self.super_grp)
 
-		self.ctrlGrp = controllers_grp
-		self.modGrp = modules_grp
-		self.bindGrp = bind_grp
-		self.superRootGrp = super_grp
+		bb.matrix_constrain(parent=self.placement_ctrl, target=self.ctrl_grp, type='parent')
 
-	def create_controller(self, name='', shape='', scale = 1.0):
+	def _create_master_controler(self, base_name = None, shape = None, scale = 1.0):
+		name_data = get_naming_data(name_input=base_name)
 		ctrl = Controller.create_curve(
-				ctrl_name=name, 
-				shape=shape,
-				color=self.ctrl_color, 
-				line_width=self.line_width, 
-				scale=scale, 
-				shape_rotation=[0, 0, 0], 
-				rotate_order='zyx'
-				)
+						ctrl_name=name_data['ctrl_name'], 
+						shape=shape,
+						color=self.ctrl_color, 
+						line_width=self.line_width, 
+						scale=scale, 
+						shape_rotation=[0, 0, 0], 
+						rotate_order='zxy'
+						)
 		return ctrl
-	
-
-
-
-
-
-
-
-
-
-
