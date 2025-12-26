@@ -205,12 +205,12 @@ class Controller:
 		elif self.connection_type == 'direct':
 			if self.gimbal:
 				cmds.warning(f'Direct Connection works only when moving Gimbal Control: {self.gimbal_ctrl}')
-				util.direct_connect([self.gimbal_ctrl], [object])
+				bb.direct_connect([self.gimbal_ctrl], [object])
 			else:
-				util.direct_connect([ctrl], [object])
+				bb.direct_connect([ctrl], [object])
 		elif 'matrix' in self.connection_type:
 			mtx_type = self.connection_type.split('_')[-1]
-			util.matrix_constrain(ctrl, object, mtx_type)
+			bb.matrix_constrain(ctrl, object, mtx_type)
 		else:
 			cmds.warning(f'Unknown connection type: {self.connection_type}')
 
