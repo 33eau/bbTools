@@ -519,8 +519,8 @@ def rotate_curve(curve, rotation=[]):
 	cmds.rotate( *rotation, f'{curve}.cv[0:{cv_count}]', r = True, objectCenterPivot = True, objectSpace = True, forceOrderXYZ = True)
 
 def matrix_constrain(parent='', target='', type='point'): #25Oct26
-	name = get_name(target)
-	side = get_side(target)
+	base, element, number, side, suffix = NAMER.extract(target)
+	element = element if element else []
 	if type in ['point', 'parent']:
 		pass
 	else:
@@ -528,13 +528,13 @@ def matrix_constrain(parent='', target='', type='point'): #25Oct26
 		return
 
 	# offset value
-	offset_mmt = cmds.createNode('multMatrix', n=f'{name}OffsetMtxCnn{side}_mmt')
+	offset_mmt = create_node('multMatrix', base, element + ['OffsetMtxCnn'], number, side)
 	cmds.connectAttr(f'{target}.worldMatrix', f'{offset_mmt}.matrixIn[0]')
 	cmds.connectAttr(f'{parent}.worldInverseMatrix', f'{offset_mmt}.matrixIn[1]')
 	offset_mtx = cmds.getAttr(f'{offset_mmt}.matrixSum')
 
 	# mtx connect
-	mtx_connect_mmt = cmds.createNode('multMatrix', n=f'{name}MtxCnn{side}_mmt')
+	mtx_connect_mmt = create_node('multMatrix', base, element + ['MtxCnn'], number, side)
 	if type == 'point':
 		cmds.connectAttr(f'{parent}.worldMatrix', f'{mtx_connect_mmt}.matrixIn[0]')
 		cmds.setAttr(f'{mtx_connect_mmt}.matrixIn[1]', offset_mtx, type='matrix')
@@ -544,7 +544,7 @@ def matrix_constrain(parent='', target='', type='point'): #25Oct26
 	cmds.connectAttr(f'{target}.parentInverseMatrix', f'{mtx_connect_mmt}.matrixIn[2]')
 
 	# decompose mtx
-	mtx_connect_dcm = cmds.createNode('decomposeMatrix', n=f'{name}MtxCnn{side}_dcm')
+	mtx_connect_dcm = create_node('decomposeMatrix', base, element + ['MtxCnn'], number, side)
 	cmds.connectAttr(f'{mtx_connect_mmt}.matrixSum', f'{mtx_connect_dcm}.inputMatrix')
 
 	# RESULT
