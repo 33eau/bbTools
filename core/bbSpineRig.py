@@ -93,7 +93,7 @@ class SpineRig:
 
 		if not self.rig_on_provided_joints:
 			element_names = ['Spline', 'Bnd']
-			joints = bb.duplicate_joint_chain(self.joints[0], add_elements=element_names, remove_element='Tmp')
+			joints = bb.duplicate_joint_chain(self.joints[0], add_elements=element_names, remove_element='tmp')
 
 		rig_jnts = joints[element_names[0]]
 		cmds.parent(rig_jnts[0], ik_mod_grp)
@@ -144,13 +144,13 @@ class SpineRig:
 		baseIk_ctrl = bc.Controller(
 						objects = [base_jnt],
 						main_ctrl_grp = ik_ctrl_grp,
-						name = f'{self.rig_name}Base',
+						name = f'{self.rig_name}IkBase',
 						side = self.side,
 						offset_names = ['Zro','Position', 'Offset'],
 						shape = 'chest',
 						color = self.subColor,
 						scale = self.scale,
-						connection_type = self.connection_type,
+						connection_type = 'None',
 						**self.controller_kwargs
 						)
 		base_ctrl = baseIk_ctrl.ctrls[0]
@@ -158,21 +158,21 @@ class SpineRig:
 		topIk_ctrl = bc.Controller(
 						objects = [top_jnt],
 						main_ctrl_grp = ik_ctrl_grp,
-						name = f'{self.rig_name}Top',
+						name = f'{self.rig_name}IkTop',
 						side = self.side,
 						offset_names = ['Zro','Position', 'Offset'],
 						shape = 'chest',
 						color = 'green',
 						scale = self.scale,
-						connection_type = self.connection_type,
+						connection_type = 'None',
 						**self.controller_kwargs
 						)
 		
 		top_ctrl = topIk_ctrl.ctrls[0]
-		top_grp = topIk_ctrl.top_grps
+		top_grp = topIk_ctrl.offset_grps
 
 		# Ctrl Position Attr
-		target_grps = [topIk_ctrl.top_grps[0][1], baseIk_ctrl.top_grps[0][1]]
+		target_grps = [topIk_ctrl.offset_grps[0][1], baseIk_ctrl.offset_grps[0][1]]
 		negative_grps = []
 		for i, ctrl in enumerate([top_ctrl, base_ctrl]):
 			target_ctrls = [top_ctrl, base_ctrl]
@@ -200,19 +200,22 @@ class SpineRig:
 			
 			negative_grp = bb.create_node('group', ctrl_name, ['neg'], number, self.side, em=True)
 			neg_mdv = bb.create_node('multiplyDivide', ctrl_name, element, number, self.side)
-			cmds.connectAttr(f'{ctrl}.t', f'{neg_mdv}.i1')
+			cmds.connectAttr(f'{target_grps[i]}.t', f'{neg_mdv}.i1')
 			cmds.setAttr( f'{neg_mdv}.i2', -1,-1,-1)
 			cmds.connectAttr(f'{neg_mdv}.o', f'{negative_grp}.t')
 			cmds.parent(negative_grp, ctrl)
 			negative_grps.append(negative_grp)
-		# topNeg_grp = negative_grps[0]
-		# baseNeg_grp = negative_grps[1]
+		topNeg_grp = negative_grps[0]
+		baseNeg_grp = negative_grps[1]
+
+		bb.create_constrain([baseNeg_grp], base_jnt)
+		bb.create_constrain([topNeg_grp], top_jnt)
 
 		mid_joints = cv_joints[1:-1]
 		mid_controllers = bc.Controller(
 						objects = mid_joints,
 						main_ctrl_grp = ik_ctrl_grp,
-						name = self.rig_name,
+						name = self.rig_name+'Ik',
 						side = self.side,
 						offset_names = ['Zro', 'Space', 'Offset'],
 						shape = 'squareRound',
@@ -222,7 +225,7 @@ class SpineRig:
 						**self.controller_kwargs
 						)
 		mid_ctrls = mid_controllers.ctrls
-		mid_grps = mid_controllers.top_grps
+		mid_grps = mid_controllers.offset_grps
 		cmds.rebuildCurve(ik_crv, ch=False, rpo = True, rt=False, end=True, kr=False, kcp=False, kep=True, kt=False, s=(self.num_mid_controls/2)+1, d=3, tol = 0.01 )
 		curve_skc = cmds.skinCluster(cv_joints, ik_crv, tsb = True, mi=3, dr=2, rui=False, nw=0, bindMethod=0 )
 		bsk.name_it(curve_skc)
@@ -325,7 +328,7 @@ class SpineRig:
 		for typ, attr in zip(follow_type, follow_attrs):
 			for i, ctrl in enumerate(mid_ctrls):
 				target_grp = mid_grps[i][1]
-				space_grps = bb.space_switch(parentA = base_ctrl, parentB = top_ctrl , attr = attr, target_grp = target_grp, follow_type = typ, ctrl = ctrl)
+				space_grps = bb.space_switch(parentA = baseNeg_grp, parentB = topNeg_grp , attr = attr, target_grp = target_grp, follow_type = typ, ctrl = ctrl)
 				follow_value = (1/(len(mid_ctrls)+1)) * (i+1)
 				cmds.setAttr( f'{ctrl}.{attr}', follow_value)
 				cmds.parent(space_grps, all_spaces_grp)
@@ -347,7 +350,7 @@ class SpineRig:
 						**self.controller_kwargs
 						)
 		fk_ctrls = fk_controllers.ctrls
-		fk_grp = fk_controllers.top_grps
+		fk_grp = fk_controllers.offset_grps
 		bb.create_constrain([self.global_ctrl], fk_grp[0][0], type='parentScale' )
 		# =============== End of fk System ===============
 
