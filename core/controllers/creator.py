@@ -63,7 +63,7 @@ class Controller:
 					gimbal = False,
 					connection_type = 'parentScale',
 					rotate_order = 'zyx',
-					lock_attrs = ['v'],
+					lock_attrs = None,
 					shape_rotation = None, 
 					temp = False,
 					fk_chain = False ,
@@ -83,10 +83,11 @@ class Controller:
 		self.gimbal = gimbal
 		self.connection_type = connection_type
 		self.rotate_order = rotate_order
-		self.lock_attrs = lock_attrs or []
 		self.shape_rotation = shape_rotation or [0, 0, 0]
 		self.temp = temp
 		self.fk_chain = fk_chain
+
+		self.lock_attrs = lock_attrs + ['v'] if lock_attrs else ['v']
 
 		self.ctrls = []
 		self.offset_grps = []
@@ -218,17 +219,18 @@ class SuperRoot:
 		
 		self.super_name = super_name
 		self.placement_name =  placement_name
-		self.ctrl_scale =  ctrl_scale
+		self.ctrl_scale =  ctrl_scale * 4
 		self.line_width = line_width
 
 		self.super_shape = kwargs.get('super_shape', 'directionalSquare')
-		self.placement_shape = kwargs.get('placement_shape', 'arrowOneDir')
+		self.placement_shape = kwargs.get('placement_shape', 'arrow1dir')
 		self.ctrl_color = kwargs.get('ctrl_color', 'yellow')
 
 		self.super_group_name = kwargs.get('super_group_name', 'Rig')
 		self.controller_group_name = kwargs.get('controller_group_name', 'Controllers')
 		self.modules_group_name = kwargs.get('modules_group_name', 'Modules')
 		self.bind_group_name = kwargs.get('bind_group_name', 'BindJoints')
+		self.scale_attr = kwargs.get('scale_attr', 'scale_uniform')
 
 		self.super_grp = None
 		self.placement_grp = None
@@ -238,6 +240,7 @@ class SuperRoot:
 
 		self.super_ctrl = None
 		self.placement_ctrl = None
+		self.scale_uniform = None
 
 		self.build()
 
@@ -259,6 +262,8 @@ class SuperRoot:
 		self.mod_grp = bb.create_group(name=self.modules_group_name, parent_heirarchy=self.super_grp)
 		self.bind_grp = bb.create_group(name=self.bind_group_name, parent_heirarchy=self.super_grp)
 
+		cmds.addAttr( self.super_ctrl, ln = self.scale_attr, at = 'float', dv = 1, k = True )
+		self.scale_uniform = f'{self.super_ctrl}.{self.scale_attr}'
 		bb.matrix_constrain(parent=self.placement_ctrl, target=self.ctrl_grp, type='parent')
 
 	def _create_master_controler(self, base_name = None, shape = None, scale = 1.0):
@@ -272,13 +277,20 @@ class SuperRoot:
 						shape_rotation=[0, 0, 0], 
 						rotate_order='zxy'
 						)
+		# lock scale
+		lock_attrs = ['sx','sy','sz','v']
+		for attr in lock_attrs:
+			cmds.setAttr(f'{ctrl}.{attr}', l=False, k=False)
 		return ctrl
 	
 class SingleControl:
-	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', **kwargs):
+	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', global_scale = '', upper_driver = '', delete_temp = True,  **kwargs):
 		self.target_obj =  target_obj
 		self.bind_parent = bind_parent
 		self.ctrl_parent =  ctrl_parent
+		self.global_scale =  global_scale
+		self.upper_driver =  upper_driver
+		self.delete_temp =  delete_temp
 
 		self.create_joint = kwargs.get('create_joint', True)
 		
@@ -304,11 +316,25 @@ class SingleControl:
 				cmds.parent(self.bind_jnt, self.bind_parent)
 			drive_target = self.bind_jnt
 
+		base_name = NAMER.format(base, element, number, '', '')
 		controller = Controller(
 							objects=[drive_target],
+							name = base_name,
+							side = side,
 							main_ctrl_grp=self.ctrl_parent,
 							**kwargs
 						)
+		
+		if self.global_scale:
+			for ax in 'xyz':
+				cmds.connectAttr(f'{self.global_scale}', f'{controller.offset_grps[0][0]}.s{ax}')
+		
+		if self.delete_temp:
+			cmds.delete(self.target_obj)
+		
+		if self.upper_driver:
+			bb.create_constrain([self.upper_driver], controller.offset_grps[0][0])
+
 		self.single_ctrl = controller.ctrls[0]
 		self.offset_grps = controller.offset_grps
 
