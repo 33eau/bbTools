@@ -17,11 +17,11 @@ def define_path(folder_name = 'data' ):
 		print ( 'Data Folder has been created.')
 	return data_path
 
-def export_data(file_name = None, data = None, path = None):
+def export_data(file_name = None, data = None, path = None, indent = 4):
 	full_path = os.path.join(path, file_name)
 	try:
 		with open(full_path, 'w') as file:
-			json.dump(data, file, indent=4)
+			json.dump(data, file, indent = indent)
 		print(f"{file_name} exported: {path}")
 	except Exception as e:
 		print(f"An error occurred: {e}")
