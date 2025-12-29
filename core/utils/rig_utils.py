@@ -36,7 +36,7 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 
 	node_name = NAMER.format(
 							base	 = base,
-							element = elements,
+							element  = elements,
 							number	 = number,
 							side	 = side,
 							suffix	 = suffix
@@ -684,14 +684,15 @@ def fkIk_switch(
 	cmds.connectAttr(f'{ctrl}.{attr_name}', f'{rev}.ix')
 	cmds.connectAttr(f'{rev}.ox', f'{fk_ctrl_grp}.v')
 
-def create_guide_curve(ctrl = '', target = '', parent = ''): #25Dec01
-	if not sParent:
-		sParent = ctrl
-	base, element, number, side, suffix = NAMER.extract(target)
+def create_guide_curve(ctrl = '', target = '', parent = '', curve_elem = 'guide'): #25Dec01
+	if not parent:
+		parent = ctrl
+	base, element, number, side, _ = NAMER.extract(target)
+	element = element + [curve_elem] if element else [curve_elem]
 	curve_name = NAMER.format(base, element , number, side, 'crv')
-	element.append('guide')
 
-	guide_crv = cmds.curve( d = 1 , p = [ ( 0 , 0 , 0 ) , ( 0 , 0 , 0 ) ], n = curve_name ) 
+	guide_crv = cmds.curve( d = 1 , p = [ ( 0 , 0 , 0 ) , ( 0 , 0 , 0 ) ]) 
+	guide_crv = cmds.rename(guide_crv, curve_name)
 	attrs = ['tx', 'ty', 'tz','rx', 'ry', 'rz', 'sx', 'sy', 'sz', 'v']
 	for attr in attrs:
 		cmds.setAttr( f'{guide_crv}.{attr}', k = False )
@@ -709,7 +710,7 @@ def create_guide_curve(ctrl = '', target = '', parent = ''): #25Dec01
 	cmds.setAttr( '{0}.overrideColorRGB'.format( guide_crv ), 0.14,0.14,0.14)
 	cmds.setAttr( '{0}.overrideDisplayType'.format( guide_crv ), 1 )
 	cmds.setAttr( '{0}.inheritsTransform'.format( guide_crv ), 0 )
-	cmds.parent( guide_crv, sParent )
+	cmds.parent( guide_crv, parent )
 	cmds.select( cl = True )
 
 	return guide_crv
@@ -819,7 +820,11 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 		space_switch_rev = create_node(node_type='reverse', base=target_name, elements=target_element+[attr_name], number=target_number, side=target_side )
 		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{space_switch_rev}.ix')
 		cmds.connectAttr(f'{space_switch_rev}.ox', f'{parent_con}.{parents[0]}W0')
-		
+
+def over_and_out(module_name = '', output_name = ''):
+	cmds.select(cl=True)
+	print(f'Created\t{module_name}:\t\t{output_name}')
+	
 ########################################################
 # OLD VERSION
 
