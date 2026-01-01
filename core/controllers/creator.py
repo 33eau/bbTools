@@ -62,12 +62,13 @@ class Controller:
 					line_width = 1.0,           
 					gimbal = False,
 					connection_type = 'parentScale',
-					rotate_order = 'zyx',
+					rotate_order = 'xyz',
 					lock_attrs = None,
 					shape_rotation = None, 
 					temp = False,
 					fk_chain = False ,
 					run = True,
+					log = False,
 					**kwargs 
 					):
 		
@@ -94,6 +95,9 @@ class Controller:
 
 		if run:
 			self.build()
+			if log:
+				print( f'CTRL: {self.ctrls}')
+				print( f'GRPS: {self.offset_grps}')
 
 	def build(self):
 		cmds.undoInfo(openChunk=True, chunkName="CreateController")
@@ -149,7 +153,7 @@ class Controller:
 		step = 2 if self.gimbal else 1
 		for i in range(0, len(self.offset_grps) - 1):
 			parent_ctrl = self.ctrls[(i * step) + (step - 1)]
-			child_grp = self.offset_grps[i + 1]
+			child_grp = self.offset_grps[i + 1][0]
 			cmds.parent(child_grp, parent_ctrl)
 
 	@staticmethod
@@ -169,6 +173,7 @@ class Controller:
 		bb.set_color([crv], color)
 		bb.scale_shape(crv, scale)
 		bb.rotate_curve(crv, rotation=shape_rotation)
+		cmds.setAttr( f'{shp}.lineWidth', line_width)
 
 		ro_value = bb.constants.ROTATE_ORDERS.get(rotate_order, 0)
 		cmds.setAttr(f'{crv}.rotateOrder', ro_value)
@@ -284,7 +289,7 @@ class SuperRoot:
 		return ctrl
 	
 class SingleControl:
-	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', global_scale = '', upper_driver = '', delete_temp = True,  **kwargs):
+	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', global_scale = '', upper_driver = '', delete_temp = False,  **kwargs):
 		self.target_obj =  target_obj
 		self.bind_parent = bind_parent
 		self.ctrl_parent =  ctrl_parent
