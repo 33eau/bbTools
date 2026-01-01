@@ -59,7 +59,7 @@ class SpineRig:
 		self.squash_attr =  squash_attr
 		self.global_scale =  global_scale
 		self.rig_on_provided_joints =  rig_on_provided_joints
-		self.scale = scale
+		self.scale = scale 
 		self.bind_parent =  bind_parent
 		self.ctrl_parent =  ctrl_parent
 		self.mod_parent =  mod_parent
@@ -230,7 +230,7 @@ class SpineRig:
 						offset_names = ['Zro', 'Space', 'Offset'],
 						shape = 'squareRound',
 						color = f'light{self.subColor.capitalize()}',
-						scale = self.scale * 0.8,
+						scale = self.scale,
 						connection_type = 'parentScale',
 						**self.controller_kwargs
 						)
@@ -354,7 +354,7 @@ class SpineRig:
 						offset_names = ['Zro', 'Offset'],
 						shape = 'crossCircle',
 						color = self.color,
-						scale = self.scale * 1.25,
+						scale = self.scale * 1.2,
 						fk_chain=True,
 						connection_type = 'None',
 						**self.controller_kwargs
@@ -380,7 +380,6 @@ class SpineRig:
 # from bbTools.core import bbSpineRig as spine
 # reload(spine)
 # cmds.file('W:/RIG/PROJ/MAYA_PROJ/HATRIG/scenes/AUTO_RIG/spine_start.ma', open=True, f=True)
-# # ## Example use:
 # spine_rig = spine.SpineRig(joints=['spineTmp01_jnt', 'spineTmp02_jnt', 'spineTmp03_jnt', 'spineTmp04_jnt', 'spineTmp05_jnt', 'spineTmp06_jnt', 'spineTmp07_jnt', 'spineTmp08_jnt'],
 # 					rig_name='spine',
 # 					element_name=None,
