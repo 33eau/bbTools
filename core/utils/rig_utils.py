@@ -2,6 +2,7 @@
 from importlib import reload
 import maya.cmds as cmds
 import maya.OpenMaya as om
+import numpy as np
 
 from ..controllers import shape_color 
 from ..data import constants as constants
@@ -41,20 +42,22 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 							side	 = side,
 							suffix	 = suffix
 							)
+	
+	clean_kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
 	if node_type == 'locator':
-		named_node = cmds.spaceLocator(n=node_name, **kwargs)[0]
+		named_node = cmds.spaceLocator(n=node_name, **clean_kwargs)[0]
 	elif node_type == 'follicle':
 		follicle_shp = cmds.createNode('follicle')
 		follicle = cmds.listRelatives(follicle_shp, p=True)[0]
 		named_node = cmds.rename(follicle, node_name)
 	elif node_type == 'group':
-		named_node = cmds.group(empty=True, n=node_name, **kwargs)
+		named_node = cmds.group(empty=True, n=node_name, **clean_kwargs)
 	elif node_type == 'joint':
 		cmds.select(cl=True)
-		named_node = cmds.joint(n=node_name, **kwargs)
+		named_node = cmds.joint(n=node_name, **clean_kwargs)
 	else:
-		named_node = cmds.createNode(node_type, n=node_name, **kwargs)
+		named_node = cmds.createNode(node_type, n=node_name, **clean_kwargs)
 	#print(f'created {node_name}')
 	return named_node
 
@@ -90,10 +93,10 @@ def normalize_axis(axis):
 				result = ax
 	return result
 
-def axis_convert(axis = None, return_type = ''):
+def axis_convert(axis = None, return_type = '', up_axis = None):
 	"""
 	:param axis: input axis
-	:param return_type: index, letter, absolute_letter, vector, ik_twist_index, ik_twist_up_index
+	:param return_type: index, letter, absolute_letter, vector, ik_twist_index, ik_twist_up_index, cross_vector, cross_letter
 	"""
 
 	formatted_axis = normalize_axis(axis)
@@ -114,7 +117,18 @@ def axis_convert(axis = None, return_type = ''):
 
 	elif return_type == 'ik_twist_up_index':
 		result = AXIS_MAP[formatted_axis][3]
-		
+
+	elif return_type == 'cross_vector':
+		axis_np = constants.AXIS_NP[axis]
+		up_axis_np = constants.AXIS_NP[up_axis]
+		result = np.cross(axis_np, up_axis_np).tolist()
+
+	elif return_type == 'cross_letter':
+		axis_np = constants.AXIS_NP[axis]
+		up_axis_np = constants.AXIS_NP[up_axis]
+		cross_axis = tuple(np.cross(axis_np, up_axis_np).tolist())
+		result = normalize_axis(cross_axis)
+
 	return  result
 
 # def get_name_type(object):
@@ -347,7 +361,8 @@ def snap(parents=[], target=None):
 	if not target:
 		target = cmds.ls(sl=True)[-1]
 		parents = cmds.ls(sl=True)[:-1]
-	cmds.matchTransform(target, parents)
+	cmds.delete(cmds.parentConstraint(parents, target, mo=False))
+	#cmds.matchTransform(target, parents)
 
 def get_center_position(components):
 	x, y, z = [], [], []
@@ -403,7 +418,7 @@ def create_offset_group(objects=None, offset_names=["Zro"]):
 		element = element if element else []
 		offset_groups = []
 		for i, offset_name in enumerate(offset_names):
-			new_group = create_node(node_type='group', base=base, elements=element + [ offset_name], number=number, side=side)
+			new_group = create_node(node_type='group', base=base, elements=element + [offset_name], number=number, side=side)
 			snap([obj],new_group)
 			if i > 0 :
 				cmds.parent(new_group, offset_groups[-1])
@@ -645,7 +660,7 @@ def space_switch(parentA = 'top_ctrl', parentB = 'base_ctrl', attr = 'followPosi
 
 	return local_grp, world_grp
 
-def fkIk_switch(
+def fk_ik_switch(
 	parents_fk = ['l_shoulder_fk_jnt', 'l_elbow_fk_jnt', 'l_wrist_fk_jnt', 'l_wrist_tip_fk_jnt'],
 	parents_ik = ['l_shoulder_ik_jnt', 'l_elbow_ik_jnt', 'l_wrist_ik_jnt', 'l_wrist_tip_ik_jnt'],
 	targets = ['l_shoulder_bnd_jnt', 'l_elbow_bnd_jnt', 'l_wrist_bnd_jnt', 'l_wrist_tip_bnd_jnt'],
@@ -665,11 +680,12 @@ def fkIk_switch(
 	for feat in features:
 		for i, target in enumerate(targets):
 			base, element, number, side, suffix = NAMER.extract(target) 
-			element = [attr_name, feat]
+			element = element if element else []
+			element = element + [attr_name, feat]
 			bcl_name = NAMER.format(base, element, number, side, 'bcl')
 
 			if not cmds.objExists(bcl_name):
-				switch = cmds.createNode('blendColors', n = bcl_name )
+				switch = create_node('blendColors', base, element, number, side)
 				cmds.connectAttr(f'{ctrl}.{attr_name}', f'{switch}.blender')
 			else:
 				switch = bcl_name	
@@ -680,6 +696,7 @@ def fkIk_switch(
 	side = parser.find_element(ctrl, 'sides')
 	rev_name = NAMER.format(setup_name, [attr_name], '', side, 'rev')
 	cmds.connectAttr(f'{ctrl}.{attr_name}', f'{ik_ctrl_grp}.v')
+
 	rev = cmds.createNode('reverse', n = rev_name)
 	cmds.connectAttr(f'{ctrl}.{attr_name}', f'{rev}.ix')
 	cmds.connectAttr(f'{rev}.ox', f'{fk_ctrl_grp}.v')
@@ -779,33 +796,37 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 							target = 'r_thigh_fk_offset_grp',
 							ctrl = 'r_thigh_fk_ctl',
 							type = 'orient',
-							default_index = 1
-						):#25Dec09
+							default_index = 1,
+							mod_grp = 'Modules_grp'
+						):
 
-	target_name, target_element, target_number, target_side, suffix = NAMER.extract(target) 
-	parents = parent_spaces
-
+	if not cmds.objExists('spaces_grp'):
+		spaces_grp = create_node('group', 'spaces', None, None, None, p=mod_grp)
+	else:
+		spaces_grp = 'spaces_grp'
+		
 	if world_space:
-		base, element, number, side, suffix = NAMER.extract(world_space) 
-		space_grp = NAMER.format(base, ['space'], number, target_side, 'grp' )
-		if not cmds.objExists(space_grp):
-			space_grp = create_node('group', base, ['space'], number, target_side )
-			cmds.matchTransform(space_grp, world_space)
-
-			target_side = parser.find_element(target, 'sides')
-			format_side = parser.format_side(target_side, 'upper')
-			if format_side == 'R':
-				inv_sx_mtx = [-1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0,0, 0, 0, 1]
-				cmds.setAttr(f'{space_grp}.offsetParentMatrix', inv_sx_mtx, type='matrix')
-			cmds.parent(space_grp, world_space)
-		world_space = space_grp
-		parents.insert(0, world_space)
-
-	parent_con = create_constrain(parents, target, type=type, maintain_offset=True)[0][0]
-	cmds.setAttr(f'{parent_con}.interpType', 2)
+		parent_spaces = [world_space] + parent_spaces 
 
 	enum_names = ':'.join(spaces_name)
 	cmds.addAttr(ctrl, ln = attr_name, at='enum', en=enum_names, dv=default_index, k=True )
+
+	target_name, target_element, target_number, target_side, suffix = NAMER.extract(target) 
+	target_element = target_element if target_element else []
+
+	spaces = []
+	for space in parent_spaces:
+		base, element, number, side, suffix = NAMER.extract(space)
+		space_name_element = target_element + [base] + element + ['space']
+		space_grp = create_node('group', target_name, space_name_element, target_number, target_side, suffix, p = spaces_grp)
+		cmds.matchTransform(space_grp, target)
+		create_constrain([space], space_grp)
+		spaces.append(space_grp)
+
+	parent_con = create_constrain(spaces, target, type=type, maintain_offset=True)[0][0]
+	try:
+		cmds.setAttr(f'{parent_con}.interpType', 2)
+	except:pass
 	
 	if len(spaces_name) > 2:
 		for i, name in enumerate(spaces_name):
@@ -814,17 +835,18 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 			cmds.setAttr( f'{space_cdt}.ctr', 1)
 			cmds.setAttr( f'{space_cdt}.cfr', 0)
 			cmds.connectAttr(f'{ctrl}.{attr_name}', f'{space_cdt}.ft')
-			cmds.connectAttr(f'{space_cdt}.ocr', f'{parent_con}.{parents[i]}W{i}')
+			cmds.connectAttr(f'{space_cdt}.ocr', f'{parent_con}.{spaces[i]}W{i}')
 	else:
-		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{parent_con}.{parents[1]}W1')
+		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{parent_con}.{spaces[1]}W1')
 		space_switch_rev = create_node(node_type='reverse', base=target_name, elements=target_element+[attr_name], number=target_number, side=target_side )
 		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{space_switch_rev}.ix')
-		cmds.connectAttr(f'{space_switch_rev}.ox', f'{parent_con}.{parents[0]}W0')
+		cmds.connectAttr(f'{space_switch_rev}.ox', f'{parent_con}.{spaces[0]}W0')
 
 def over_and_out(module_name = '', output_name = ''):
 	cmds.select(cl=True)
 	print(f'Created\t{module_name}:\t\t{output_name}')
-	
+
+
 ########################################################
 # OLD VERSION
 

@@ -30,25 +30,26 @@ def find_element(full_name, element_list = templates.ELEMENTS):
 	else:
 		pattern_string = '|'.join(element_list)
 		pattern = re.compile(f'({pattern_string})', re.IGNORECASE)
-		match = pattern.findall(full_name)
-
-	if match:
-		return match
-	else:
-		return None
+		#match = pattern.findall(full_name)
+		match = pattern.search(full_name)
+		match = [match.group(0)] if match else []
+	return match
+	
+	# if match:
+	# 	return match
+	# else:
+	# 	return []
 
 def find_number(full_name, base_number=False):
 	pattern = re.compile(r'\d+')
 	match = pattern.findall(full_name)
 	if match:
 		if base_number:
-			if len(match) > 1:
-				match = match[0]
-			else:
-				match = ''
+			target_match = match[0]
 		else:
-			match = match[-1] if match else ''
-		return match
+			target_match = match[-1]
+		result = "{:02d}".format(int(target_match))
+		return result
 	else:
 		return None
 
@@ -65,17 +66,28 @@ def clean_name(full_name, element):
 	new_name = re.sub('_+','_', full_name).strip('_')
 	return new_name
 
-def get_base_name(full_name, base_number = True):
+def get_base_name(full_name, base_number = True, first_name = False):
 	side = find_element(full_name, 'sides')
 	elem = find_element(full_name, element_list = templates.ELEMENTS)
 	suffix = get_suffix(full_name) if '_' in full_name else None
-	components = [side, elem, suffix]
+	components = [side, suffix, elem]
 	num = find_number(full_name, base_number=base_number)
 	
 	if components:
 		for comp in components:
 			full_name = clean_name(full_name, comp)
 	base_name = full_name
+	if first_name:
+		if '_' in base_name:
+			base_name = base_name.split('_')[0]
+		else:
+			word_range = []
+			for i, letter in enumerate (base_name):
+				if letter.isupper():
+					word_range.append(i)
+			word_range.append(len(base_name))
+			first_word = word_range[0] + 1
+			base_name = base_name[:first_word]
 	if num:
 		if base_number:
 			base_name = full_name+num

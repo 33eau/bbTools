@@ -179,7 +179,18 @@ def import_skin_weight(objects=None, search_for=None, replace_with=None, prefix=
 		print( f'noDataObjs : {no_data_list}')
 	print(f'{len(skin_nodes)} has been imported.')
 
-def name_it(objects):
+def bind_skin(jnts, target_obj, **kwargs):
+	"""
+	This function accepts kwargs.
+	:param jnts: bind joints
+	:param target_obj: target object
+	:param return_type: named skinCluster
+	"""
+	skin = cmds.skinCluster(jnts, target_obj, tsb=True, mi=2, dr=2, rui=False, nw=1, bindMethod=0, **kwargs)
+	named_skin = name_it([target_obj])
+	return named_skin
+
+def name_it(objects=''):
 	if not objects:
 		objects = cmds.ls(sl=True)
 	for obj in objects:
@@ -189,11 +200,10 @@ def name_it(objects):
 			skc = obj
 			obj = cmds.listConnections(f'{skc}.input[0].inputGeometry')[0]
 		base, element, number, side, suffix = NAMER.extract(obj) 
-		element = element if element else []
 		element.append(suffix)
 		node_name = NAMER.format(base, element, number, side, templates.TYPE_SUFFIX['skinCluster'])
 		skc = cmds.rename(skc, node_name)
-	return
+	return skc
 
 
 
