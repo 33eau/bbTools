@@ -1,103 +1,246 @@
+from importlib import reload
 import maya.cmds as cmds
 from .utils import rig_utils as bb
 from .controllers import creator as bc
-from .naming import factory as naming
-from .naming import helper as hp
-reload(bb )
+from .controllers import shape_color
+from .naming import namer_factory as naming
+from .naming import current_project
+from .naming import parser
+from . import bbIkRig as ik
+from . import bbFkRig as fk
+from . import bbRibbonRig as rbn
+
+reload(bb)
 reload(bc)
 reload(naming)
-reload(hp)
+reload(current_project)
+reload(parser)
+reload(ik)
+reload(fk)
+reload(rbn)
 
-# IK LIMB RIG with stretch and squash
-NAME_TEMPLATE = 'hatrig'
+NAME_TEMPLATE = current_project.PROJECT
 NAMER = naming.get_namer(NAME_TEMPLATE)
 
+FK_CTRL_SHAPE = 'crossCircle'
+IK_CTRL_SHAPE = 'cube'
+IK_PV_CTRL_SHAPE = 'diamond'
+IK_END_CTRL_SHAPE = 'cube'
+SETTING_CTRL_SHAPE = 'hexagon3d'
+RIBBON_CTRL_SHAPE = 'squareRound'
+NUM_NURB_SUBDIVISION = 8
 
-limb_joints = ['l_thigh_ik_jnt', 'l_knee_ik_jnt', 'l_ankle_ik_jnt']
-base_ctrl = 'l_thigh_ik_ctl'
-end_ctrl = 'l_leg_ik_hdl_ctl'
-feature_stretch = 'stretch'
-feature_squash = 'volume'
+class LimbRig:
+	def __init__(self,
+				joints = None,
+				setting_jnt = None,
+				rig_name = None,
+				parts_name = [],
+				side = None,
+				aim_axis = 'x',
+				up_axis = 'z',
+				rotate_order = 'zxy',
+				connection_type = 'parent',
+				scale = 1,
+				stretch_attr = 'stretch',
+				squash_attr = 'squash',
+				global_scale = '',
+				base_orient_loc = '',
+				end_orient_loc = '',
+				world_space = None,
+				ctrl_parent =None,
+				mod_parent = None,
+				bind_parent ='',
+				upper_driver = '',
+				feature_name = 'ribbon',
+				color = None,
+				default_fkIk = 1,
+				default_ik_base = 0,
+				default_ik_end = 1,
+				**controller_kwargs
+				):
+		
+		self.joints =  joints
+		self.setting_jnt =  setting_jnt
+		self.rig_name =  rig_name
+		self.aim_axis =  aim_axis
+		self.up_axis =  up_axis
+		self.rotate_order =  rotate_order
+		self.connection_type =  connection_type
+		self.scale =  scale
+		self.stretch_attr =  stretch_attr
+		self.squash_attr =  squash_attr
+		self.global_scale =  global_scale
+		self.base_orient_loc =  base_orient_loc
+		self.end_orient_loc =  end_orient_loc
+		self.world_space =  world_space
+		self.ctrl_parent =  ctrl_parent
+		self.mod_parent =  mod_parent
+		self.bind_parent =  bind_parent
+		self.upper_driver =  upper_driver
+		self.feature_name =  feature_name
+		self.default_fkIk =  default_fkIk
+		self.default_ik_base =  default_ik_base
+		self.default_ik_end =  default_ik_end
+		self.controller_kwargs =  controller_kwargs
+	
+		if side is None :
+			self.side = parser.find_element(joints[0], 'sides')
+		else:
+			self.side =  side
 
-rig_name = 'leg'
+		if color is None:
+			formatted_side = parser.format_side(self.side, 'upper')
+			color = shape_color.CTRL_COLOR.get(formatted_side, [0,5, 0.5, 0.5])
+			self.color = color
+		else: 
+			self.color =  color 
 
-base, element, number, side, suffix = NAMER.extract(limb_joints[0]) 
+		if not parts_name:
+			self.parts_name = []
+			for jnt in joints:
+				base_name = parser.get_base_name(jnt)
+				base_name = parser.clean_name(base_name, 'tmp')
+				self.parts_name.append(base_name)
+		else:
+			self.parts_name =  parts_name
+		
+		self.up_vector = bb.axis_convert(up_axis, 'vector')
+		default_shape_rotation = [item * 90 for item in self.up_vector]
+		self.shape_rotation = controller_kwargs.get('shape_rotation', default_shape_rotation)
+			
+		self.ctrl_grp = None
+		self.mod_grp = None
+		self.bind_jnts = None
+		self.ctrl_dict = {}
 
-ctrls = [base_ctrl, end_ctrl]
-position_locators = []
-for i, point in enumerate(['start', 'end']):
-	loc = bb.create_named_node( node_type='locator', base=rig_name, elements=[feature_stretch, point], number=number, side=side, namer=NAMER)
-	cmds.matchTransform(loc, ctrls[i])
-	if NAME_TEMPLATE == 'hatrig':
-		cmds.parent(loc, ctrls[i])
-	else:
-		bb.create_constrain( parents=[ctrls[i]], target=loc, type="parent")
-	cmds.hide(loc)
-	position_locators.append(loc)
-base_loc = position_locators[0]
-end_loc = position_locators[1]
+		self.build()
+		bb.over_and_out('LimbRig', f'{self.side}{self.rig_name}')
+	
+	def build(self):
+		base, element, number, _, _ = NAMER.extract(self.rig_name)
+		element = element if element else []
+		self.ctrl_grp = bb.create_node('group', base, element + ['Ctrl'], number, self.side, p=self.ctrl_parent)
+		self.mod_grp = bb.create_node('group', base, element + ['Mod'], number, self.side, p=self.mod_parent)
+		jnt_grp = bb.create_node('group', base, element + ['Jnt'], number, self.side, p=self.mod_grp)
+		bb.create_constrain([self.upper_driver], self.ctrl_grp)
 
+		generated_joints = bb.duplicate_joint_chain(self.joints[0], add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp')
+		fk_jnts = generated_joints['fk']
+		ik_jnts = generated_joints['ik']
+		rig_jnts = generated_joints['rig']
+		bind_jnts = generated_joints['bnd']
 
-distant_node = bb.create_named_node( node_type='distanceBetween', base=rig_name, elements=[feature_stretch], number=number, side=side, namer=NAMER)
-cmds.connectAttr(f'{base_loc}.worldPosition[0]',  f'{distant_node}.p1')
-cmds.connectAttr(f'{end_loc}.worldPosition[0]',  f'{distant_node}.p2')
-distance = cmds.getAttr(f'{distant_node}.distance')
+		cmds.parent(fk_jnts[0], ik_jnts[0], rig_jnts[0], jnt_grp)
+		cmds.parent(bind_jnts[0], self.bind_parent)
 
-dist_perc_mdv = bb.create_named_node( node_type='multiplyDivide', base=rig_name, elements=['dist', 'perc'], number=number, side=side, namer=NAMER)
-cmds.connectAttr(f'{distant_node}.distance', f'{dist_perc_mdv}.i1x')
-cmds.setAttr( f'{dist_perc_mdv}.i2x', distance)
-cmds.setAttr(f'{dist_perc_mdv}.op', 2 )
+		ik_rig = ik.IkRig( joints = ik_jnts,
+						rig_name = self.rig_name,
+						side = self.side,
+						element_name = 'ik',
+						stretch = True,
+						squash = True,
+						aim_axis = self.aim_axis,
+						up_axis = self.up_axis,
+						ctrl_shape = IK_CTRL_SHAPE,
+						ctrl_color = self.color,
+						connection_type = self.connection_type,
+						scale = self.scale,
+						stretch_attr = self.stretch_attr,
+						squash_attr = self.squash_attr,
+						global_scale = self.global_scale,
+						base_orient_loc = self.base_orient_loc,
+						end_orient_loc = self.end_orient_loc,
+						world_space = self.world_space,
+						ctrl_parent = self.ctrl_grp,
+						mod_parent = self.mod_grp,
+						upper_driver = self.upper_driver,
+						default_ik_base = self.default_ik_base,
+						default_ik_end = self.default_ik_end,
+						)
+		ik_grps = ik_rig.mod_grp
 
-attr_name = 'auto' + feature_stretch.capitalize()
-mannual_attr = 'mannual' + feature_stretch.capitalize()
-#if not cmds.attributeQuery(attr_name, ln=True, node=end_ctrl, exists=True):
-cmds.addAttr( end_ctrl, ln = attr_name, at = 'float', min = 0, max = 1, dv = 1, k = True )
-cmds.addAttr( end_ctrl, ln = mannual_attr, at = 'float', min = -1, max = 10, dv = 1, k = True )
+		fk_rig = fk.FKRig( 
+						joints=fk_jnts,
+						rig_name = self.rig_name,
+						element_name = 'fk',
+						side = self.side,
+						stretch = True,
+						squash = True,
+						aim_axis = self.aim_axis,
+						up_axis = self.up_axis,
+						shape = FK_CTRL_SHAPE,
+						color = self.color,
+						connection_type = 'None',
+						ctrl_parent = self.ctrl_grp,
+						scale = self.scale * 1.3,
+						rotate_order = self.rotate_order,
+						shape_rotation = self.shape_rotation 
+						)
+		fk_ctrls = fk_rig.ctrls	
+		fk_grps = fk_rig.grps	
 
-feature_switch = bb.create_named_node( node_type='blendColors', base=rig_name, elements=[feature_stretch], number=number, side=side, namer=NAMER)
-cmds.connectAttr(f'{end_ctrl}.{attr_name}', f'{feature_switch}.blender')
-cmds.connectAttr(f'{dist_perc_mdv}.ox', f'{feature_switch}.c1r')
+		if self.end_orient_loc:
+			bb.snap([self.end_orient_loc], fk_grps[-1][0] )
 
-mannual_mdl = bb.create_named_node( node_type='multDoubleLinear', base=rig_name, elements=[feature_stretch], number=number, side=side, namer=NAMER)
-cmds.connectAttr(f'{end_ctrl}.{mannual_attr}', f'{mannual_mdl}.i2')
-cmds.connectAttr(f'{feature_switch}.opr', f'{mannual_mdl}.i1')
+		for ctrl, jnt in zip(fk_ctrls, fk_jnts):
+			bb.create_constrain([ctrl], jnt, 'pac')
 
-bend_cdt = bb.create_named_node( node_type='condition', base=rig_name, elements=[feature_stretch], number=number, side=side, namer=NAMER)
-cmds.connectAttr(f'{distant_node}.distance', f'{bend_cdt}.ft')
-cmds.setAttr( f'{bend_cdt}.st', distance)
-cmds.setAttr(f'{bend_cdt}.op', 2 )
-cmds.connectAttr(f'{mannual_mdl}.o', f'{bend_cdt}.ctr')
-cmds.connectAttr(f'{end_ctrl}.{mannual_attr}', f'{bend_cdt}.cfr')
+		setting_controller = bc.Controller( 
+							objects = [self.setting_jnt],
+							main_ctrl_grp = self.ctrl_grp,
+							shape = SETTING_CTRL_SHAPE,
+							color = 'orange',
+							scale = self.scale * 0.4,
+							line_width = 1.25,
+							connection_type = 'None',
+							shape_rotation = [0,0,0]
+							)
+		setting_ctrl = setting_controller.ctrls[0]
+		setting_grp = setting_controller.offset_grps[0][0]
 
-for jnt in limb_joints[:-1]:
-	cmds.connectAttr(f'{bend_cdt}.ocr', f'{jnt}.sy')
+		bb.create_guide_curve(ctrl = setting_ctrl, target = rig_jnts[2], parent = self.ctrl_grp, curve_elem = '')
+		bb.attr_separator(ctrl=setting_ctrl)
 
-### ================ END OF STRETCH ================ ###
-########################################################
+		bb.add_enum_space_switch( parent_spaces = [rig_jnts[0], rig_jnts[1], rig_jnts[2]],
+									world_space = self.world_space,
+									attr_name = 'follow',
+									spaces_name = ['world', self.parts_name[0], self.parts_name[1], self.parts_name[2]],
+									target = setting_grp,
+									ctrl = setting_ctrl,
+									type = 'point',
+									default_index = 2
+								)
 
-# Squash
-power_mdv = bb.create_named_node( node_type='multiplyDivide', base=rig_name, elements=[feature_squash, 'power'], number=number, side=side, namer=NAMER)
-cmds.setAttr(f'{power_mdv}.op', 3 )
-cmds.setAttr( f'{power_mdv}.i2x', 0.5)
-cmds.connectAttr(f'{bend_cdt}.ocr', f'{power_mdv}.i1x')
+		bb.fk_ik_switch(
+			parents_fk = fk_jnts,
+			parents_ik = ik_jnts,
+			targets = rig_jnts,
+			attr_name = 'fkIk',
+			features = ['translation', 'rotation', 'scale'],
+			ctrl = setting_ctrl,
+			ik_ctrl_grp = ik_rig.ctrl_grp,
+			fk_ctrl_grp = fk_rig.ctrl_grp,
+			setup_name = self.rig_name,
+			default_value = self.default_fkIk
+			)
 
-one_div_mdv = bb.create_named_node( node_type='multiplyDivide', base=rig_name, elements=[feature_squash, 'one', 'div'], number=number, side=side, namer=NAMER)
-cmds.setAttr( f'{one_div_mdv}.i1x', 1)
-cmds.setAttr(f'{one_div_mdv}.op', 2 )
-cmds.connectAttr(f'{power_mdv}.ox', f'{one_div_mdv}.i2x')
+		for rig_jnt, bind_jnt in zip(rig_jnts, bind_jnts):
+			bb.create_constrain([rig_jnt], bind_jnt, 'parentScale')
 
-attr_name = 'auto' + feature_squash.capitalize()
-cmds.addAttr( end_ctrl, ln = attr_name, at = 'float', min = 0, max = 1, dv = 1, k = True )
-
-sq_switch = bb.create_named_node( node_type='blendColors', base=rig_name, elements=[feature_squash], number=number, side=side, namer=NAMER)
-cmds.connectAttr(f'{end_ctrl}.{attr_name}', f'{sq_switch}.blender')
-cmds.connectAttr(f'{one_div_mdv}.ox', f'{sq_switch}.c1r')
-cmds.setAttr( f'{sq_switch}.c2r', 1)
-
-for jnt in limb_joints[:-1]:
-	cmds.connectAttr(f'{sq_switch}.opr', f'{jnt}.sx')
-	cmds.connectAttr(f'{sq_switch}.opr', f'{jnt}.sz')
-
-### ================= END OF SQUASH ================= ###
-#########################################################
-
+		cross_axis = bb.axis_convert(self.aim_axis, 'cross_letter', self.up_axis)
+		ribbon_rig = rbn.RibbonRig(joints = rig_jnts,
+						rig_name = self.rig_name,
+						feature_name = self.feature_name,
+						aim_axis = self.aim_axis,
+						up_axis = cross_axis,
+						num_nurb_subdivision = NUM_NURB_SUBDIVISION,
+						connection_type = self.connection_type,
+						scale = self.scale,
+						ctrl_parent = self.ctrl_grp,
+						mod_parent = self.mod_grp,
+						upper_bind_parent = bind_jnts[0],
+						lower_bind_parent = bind_jnts[1],
+						color = 'light'+self.color.capitalize(),
+						end_orient_loc =self.end_orient_loc,
+						**self.controller_kwargs)
