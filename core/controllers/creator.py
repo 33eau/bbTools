@@ -289,15 +289,31 @@ class SuperRoot:
 		return ctrl
 	
 class SingleControl:
-	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', global_scale = '', upper_driver = '', delete_temp = False,  **kwargs):
+	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', global_scale = '', upper_driver = '', delete_temp = False, color = '',  **kwargs):
 		self.target_obj =  target_obj
 		self.bind_parent = bind_parent
 		self.ctrl_parent =  ctrl_parent
 		self.global_scale =  global_scale
 		self.upper_driver =  upper_driver
 		self.delete_temp =  delete_temp
+		self.color = color
 
+		self.side = kwargs.get('side', None)
 		self.create_joint = kwargs.get('create_joint', True)
+
+		if not self.side:
+			self.side = parser.find_element(self.target_obj, 'sides')
+			if self.side:
+				if not self.color:
+					formatted_side = parser.format_side(self.side, 'upper')
+					default_color = shape_color.CTRL_COLOR[formatted_side]
+			else:
+				if not self.color:
+					default_color = 'yellow'
+				else:
+					default_color = self.color
+
+		self.color = kwargs.get('color', default_color)
 		
 		# Return result
 		self.single_ctrl = None
@@ -316,17 +332,18 @@ class SingleControl:
 		if self.create_joint:
 			base_name = parser.clean_name(base, ['tmp', 'temp'])
 			self.bind_jnt = bb.create_node('joint', base_name, element+['Bnd'], number, side)
-			bb.snap(self.target_obj, self.bind_jnt)
+			bb.snap([self.target_obj], self.bind_jnt)
 			if self.bind_parent and cmds.objExists(self.bind_parent):
 				cmds.parent(self.bind_jnt, self.bind_parent)
 			drive_target = self.bind_jnt
 
-		base_name = NAMER.format(base, element, number, '', '')
+		base_name = NAMER.format(base, element, number, None, None)
 		controller = Controller(
 							objects=[drive_target],
 							name = base_name,
 							side = side,
 							main_ctrl_grp=self.ctrl_parent,
+							color = self.color,
 							**kwargs
 						)
 		
