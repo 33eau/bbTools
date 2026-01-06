@@ -19,6 +19,7 @@ NAMER = naming.get_namer(NAME_TEMPLATE)
 class IkRig:
 	def __init__(self,
 				joints = None,
+				pole_vector_jnt = None,
 				rig_name = 'leg',
 				side = None,
 				element_name = 'ik',
@@ -41,10 +42,13 @@ class IkRig:
 				mod_parent = None,
 				upper_driver = None,
 				default_ik_base = 0,
+				default_ik_pv = 1,
 				default_ik_end = 0,
+				base_parent_type = 'orient',
 				**controller_kwargs
 				):
 		self.joints =  joints
+		self.pole_vector_jnt =  pole_vector_jnt
 		self.rig_name =  rig_name
 		self.element_name =  element_name
 		self.stretch =  stretch
@@ -67,7 +71,9 @@ class IkRig:
 		self.mod_parent =  mod_parent
 		self.upper_driver =  upper_driver
 		self.default_ik_base =  default_ik_base
+		self.default_ik_pv =  default_ik_pv
 		self.default_ik_end =  default_ik_end
+		self.base_parent_type =  base_parent_type
 
 		self.number = parser.find_number(self.rig_name)
 		if side is None :
@@ -93,16 +99,10 @@ class IkRig:
 		
 		self.ctrl_grp = bb.create_node('group', base=self.rig_name, elements=[self.element_name, 'ctrl'], side=self.side, p=self.ctrl_parent)
 		self.mod_grp = bb.create_node('group', base=self.rig_name, elements=[self.element_name, 'mod'], side=self.side, p=self.mod_parent)
-		
-		prefer_angle = -90
-		if '-' in self.aim_axis:
-			prefer_angle = 90
-			
-		absulote_axis = bb.axis_convert(self.up_axis, 'absolute_letter')
-		cmds.setAttr( f'{self.joints[1]}.preferredAngle{absulote_axis.capitalize()}', prefer_angle)
 
 		node_name = NAMER.format(self.rig_name, ['ik'], self.number, self.side, 'ikh')
-		ikh, eff = cmds.ikHandle(sj=self.joints[0], ee=self.joints[2], n = node_name)
+		ikh, eff = cmds.ikHandle(sj=self.joints[0], ee=self.joints[-1], n = node_name, sol='ikRPsolver' )
+
 		node_name = NAMER.format(self.rig_name, ['ik'], self.number, self.side, 'eff')
 		cmds.rename(eff, node_name)
 		cmds.parent(ikh, self.mod_grp)
@@ -125,8 +125,7 @@ class IkRig:
 		ik_base_grp = ik_base_controller.offset_grps[0][0]
 		if self.base_orient_loc:
 			bb.snap([self.base_orient_loc], ik_base_grp)
-		bb.add_enum_space_switch( [self.upper_driver] , world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_base_grp, ctrl= self.ik_base_ctrl, type = 'orient', default_index=self.default_ik_base)	
-
+		bb.add_enum_space_switch( [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_base_grp, ctrl= self.ik_base_ctrl, type = self.base_parent_type, default_index=self.default_ik_base)	
 
 		ikh_end_controller = bc.Controller(objects = [ikh],
 					name=self.rig_name+'_ik',
@@ -147,13 +146,11 @@ class IkRig:
 		if self.base_orient_loc:
 			bb.snap([self.end_orient_loc], ik_end_grps[0])
 
-		bb.add_enum_space_switch(parent_spaces = [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'base'], target = ik_end_grps[1], ctrl=self.ik_end_ctrl, type = 'parent', default_index= self.default_ik_end)
+		bb.add_enum_space_switch(parent_spaces = [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_end_grps[1], ctrl=self.ik_end_ctrl, type = 'parent', default_index= self.default_ik_end)
 		bb.create_constrain([self.ik_end_ctrl], ikh, 'point')
 		node_name = NAMER.format(self.rig_name, ['pv'], self.number, self.side, 'loc')
-		pv_position_loc = bb.pole_vector_position(self.joints[:3], 0.5, create_locator=True)
-		pv_position_loc = cmds.rename(pv_position_loc, node_name)
 
-		ik_pv_controller = bc.Controller(objects = [pv_position_loc],
+		ik_pv_controller = bc.Controller(objects = [self.pole_vector_jnt],
 								offset_names = ['zro', 'space', 'Offset'],
 								main_ctrl_grp = self.ctrl_grp,
 								shape = 'diamond',
@@ -169,11 +166,10 @@ class IkRig:
 		self.ik_pv_ctrl = ik_pv_controller.ctrls[0]
 		self.ik_pv_grp = ik_pv_controller.offset_grps
 		pv_space_grp = ik_pv_controller.offset_grps[0][1]
-		cmds.delete(pv_position_loc)
 		node_name = NAMER.format(self.rig_name, ['pv'], self.number, self.side, 'pvc')
 		cmds.poleVectorConstraint(self.ik_pv_ctrl, ikh, n=node_name)
 		bb.create_guide_curve(self.ik_pv_ctrl, self.joints[1], parent=self.ctrl_grp, curve_elem='pv')
-		bb.add_enum_space_switch( [self.ik_base_ctrl, self.ik_end_ctrl] , world_space=self.world_space, attr_name='follow', spaces_name=['world', 'base', 'end'], target = self.ik_pv_grp[0][1], ctrl= self.ik_pv_ctrl, type = 'parent', default_index=0)	
+		bb.add_enum_space_switch( [self.ik_base_ctrl, self.ik_end_ctrl] , world_space=self.world_space, attr_name='follow', spaces_name=['world', 'base', 'end'], target = self.ik_pv_grp[0][1], ctrl= self.ik_pv_ctrl, type = 'parent', default_index=self.default_ik_pv)	
 		self.ctrls = [self.ik_base_ctrl, self.ik_pv_ctrl, self.ik_end_ctrl]
 
 		if self.stretch:
@@ -195,15 +191,18 @@ class IkRig:
 		real_time_distant_dbt = bb.create_node( node_type='distanceBetween', base=self.rig_name, elements=[self.stretch_attr], number=self.number, side=self.side, namer=NAMER)
 		cmds.connectAttr(f'{base_loc}.worldPosition[0]',  f'{real_time_distant_dbt}.p1')
 		cmds.connectAttr(f'{end_loc}.worldPosition[0]',  f'{real_time_distant_dbt}.p2')
-		distance = cmds.getAttr(f'{real_time_distant_dbt}.distance')
 
 		aim_attr = bb.axis_convert(self.aim_axis, 'absolute_letter')
-		upper_len = cmds.getAttr(f'{self.joints[1]}.t{aim_attr}')
-		lower_len = cmds.getAttr(f'{self.joints[2]}.t{aim_attr}')
-		total_len = abs(upper_len+lower_len)
+		total_len = 0
+		for jnt in self.joints[1:]:
+			jnt_len = cmds.getAttr(f'{jnt}.t{aim_attr}')
+			total_len += abs(jnt_len)
+
+
+
 
 		global_scale_mdl = bb.create_node('multDoubleLinear', self.rig_name, ['global', 'scale'], self.number, self.side)
-		cmds.setAttr( f'{global_scale_mdl}.i1', total_len)
+		cmds.setAttr( f'{global_scale_mdl}.i1', total_len )
 		cmds.connectAttr(self.global_scale, f'{global_scale_mdl}.i2')
 		for ax in 'xyz':
 			cmds.connectAttr(self.global_scale, f'{self.ctrl_grp}.s{ax}')
@@ -235,11 +234,7 @@ class IkRig:
 		cmds.connectAttr(f'{mannual_mdl}.o', f'{bend_cdt}.ctr')
 		cmds.connectAttr(f'{self.ik_end_ctrl}.{mannual_attr}', f'{bend_cdt}.cfr')
 
-		# if NAME_TEMPLATE == 'hatrig':
-		# 	for jnt in self.joints[:2]:
-		# 		cmds.connectAttr(f'{bend_cdt}.ocr', f'{jnt}.s{self.aim_axis}')
-		# else:
-		for jnt in self.joints[1:3]:
+		for jnt in self.joints[1:]:
 			base_name = parser.get_base_name(jnt)
 			original_posi = cmds.getAttr(f'{jnt}.t{aim_attr}')
 			original_posi_mdl = bb.create_node(node_type='multDoubleLinear', base=base_name, elements=[self.stretch_attr], number=self.number, side=self.side)
@@ -254,7 +249,10 @@ class IkRig:
 			power_mdv = bb.create_node( node_type='multiplyDivide', base=self.rig_name, elements=[self.squash_attr, 'power'], number=self.number, side=self.side, namer=NAMER)
 			cmds.setAttr(f'{power_mdv}.op', 3 )
 			cmds.setAttr( f'{power_mdv}.i2x', 0.5)
-			cmds.connectAttr(f'{bend_cdt}.ocr', f'{power_mdv}.i1x')
+
+			bend_output_abs = bb.create_node('absolute', self.rig_name, [self.squash_attr, 'abs'], self.number, self.side)
+			cmds.connectAttr(f'{bend_cdt}.ocr', f'{bend_output_abs}.input')
+			cmds.connectAttr(f'{bend_output_abs}.output', f'{power_mdv}.i1x')
 
 			one_div_mdv = bb.create_node( node_type='multiplyDivide', base=self.rig_name, elements=[self.squash_attr, 'one', 'div'], number=self.number, side=self.side, namer=NAMER)
 			cmds.setAttr( f'{one_div_mdv}.i1x', 1)
@@ -305,8 +303,10 @@ class IkRig:
 		cmds.setAttr(f'{lock_perc_mdv}.op', 2 )
 
 		for i, channel in enumerate('xy'):
-			init_len = cmds.getAttr(f'{distance_nodes[i]}.distance')
-			cmds.setAttr( f'{lock_perc_mdv}.i2{channel}', init_len)
+			distance_abs = bb.create_node('absolute', self.rig_name, [point_names[i+1], 'abs'], self.number, self.side)
+			cmds.connectAttr(f'{distance_nodes[i]}.distance', f'{distance_abs}.i')
+			cmds.connectAttr(f'{distance_abs}.o', f'{lock_perc_mdv}.i2{channel}')
+
 			cmds.connectAttr(f'{distance_nodes[i]}.distance', f'{lock_perc_mdv}.i1{channel}')
 			cmds.connectAttr(f'{lock_perc_mdv}.o{channel}', f'{lock_switch_bcl}.c1{lock_channels[i]}')
 			cmds.connectAttr(f'{lock_switch_bcl}.op{lock_channels[i]}', f'{self.joints[i]}.s{aim_attr}', f=True)
