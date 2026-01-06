@@ -17,12 +17,27 @@ def define_path(folder_name = 'data' ):
 		print ( 'Data Folder has been created.')
 	return data_path
 
-def export_data(file_name = None, data = None, path = None, indent = 4):
+def export_data(file_name = None, data = None, path = None, indent = 4, mode = 'overwrite'):
+	'''
+	Export data to specific path as 'filename.type'
+	:param file_name: output file name, must include file type ("file.type")
+	:param mode: export mode (overwrite, append)
+	'''
 	full_path = os.path.join(path, file_name)
 	try:
-		with open(full_path, 'w') as file:
-			json.dump(data, file, indent = indent)
-		print(f"{file_name} exported: {path}")
+
+		if mode == 'overwrite':
+			with open(full_path, 'w') as file:
+				json.dump(data, file, indent = indent)
+			print(f"{file_name} exported: {path}")
+
+		elif mode == 'append':
+			with open(full_path) as existed_file:
+				append_file = json.load(existed_file)
+			append_file.update(data)
+			with open(full_path, 'w') as file:
+				json.dump(append_file, file, indent = indent)
+
 	except Exception as e:
 		print(f"An error occurred: {e}")
 
