@@ -33,6 +33,7 @@ NUM_NURB_SUBDIVISION = 8
 class LimbRig:
 	def __init__(self,
 				joints = None,
+				pole_vector_jnt = None, 
 				setting_jnt = None,
 				rig_name = None,
 				parts_name = [],
@@ -52,6 +53,7 @@ class LimbRig:
 				mod_parent = None,
 				bind_parent ='',
 				upper_driver = '',
+				ribbon = True,
 				feature_name = 'ribbon',
 				color = None,
 				default_fkIk = 1,
@@ -61,6 +63,7 @@ class LimbRig:
 				):
 		
 		self.joints =  joints
+		self.pole_vector_jnt =  pole_vector_jnt
 		self.setting_jnt =  setting_jnt
 		self.rig_name =  rig_name
 		self.aim_axis =  aim_axis
@@ -78,6 +81,7 @@ class LimbRig:
 		self.mod_parent =  mod_parent
 		self.bind_parent =  bind_parent
 		self.upper_driver =  upper_driver
+		self.ribbon =  ribbon
 		self.feature_name =  feature_name
 		self.default_fkIk =  default_fkIk
 		self.default_ik_base =  default_ik_base
@@ -114,10 +118,10 @@ class LimbRig:
 		self.bind_jnts = None
 		self.ctrl_dict = {}
 
-		self.build()
+		self._build()
 		bb.over_and_out('LimbRig', f'{self.side}{self.rig_name}')
 	
-	def build(self):
+	def _build(self):
 		base, element, number, _, _ = NAMER.extract(self.rig_name)
 		element = element if element else []
 		self.ctrl_grp = bb.create_node('group', base, element + ['Ctrl'], number, self.side, p=self.ctrl_parent)
@@ -125,7 +129,7 @@ class LimbRig:
 		jnt_grp = bb.create_node('group', base, element + ['Jnt'], number, self.side, p=self.mod_grp)
 		bb.create_constrain([self.upper_driver], self.ctrl_grp)
 
-		generated_joints = bb.duplicate_joint_chain(self.joints[0], add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp')
+		generated_joints = bb.duplicate_joint_chain(self.joints[0], add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_jnt])
 		fk_jnts = generated_joints['fk']
 		ik_jnts = generated_joints['ik']
 		rig_jnts = generated_joints['rig']
@@ -135,6 +139,7 @@ class LimbRig:
 		cmds.parent(bind_jnts[0], self.bind_parent)
 
 		ik_rig = ik.IkRig( joints = ik_jnts,
+						pole_vector_jnt = self.pole_vector_jnt,
 						rig_name = self.rig_name,
 						side = self.side,
 						element_name = 'ik',
@@ -175,7 +180,8 @@ class LimbRig:
 						ctrl_parent = self.ctrl_grp,
 						scale = self.scale * 1.3,
 						rotate_order = self.rotate_order,
-						shape_rotation = self.shape_rotation 
+						shape_rotation = self.shape_rotation,
+						rig_end_joint=True
 						)
 		fk_ctrls = fk_rig.ctrls	
 		fk_grps = fk_rig.grps	
@@ -228,19 +234,22 @@ class LimbRig:
 		for rig_jnt, bind_jnt in zip(rig_jnts, bind_jnts):
 			bb.create_constrain([rig_jnt], bind_jnt, 'parentScale')
 
-		cross_axis = bb.axis_convert(self.aim_axis, 'cross_letter', self.up_axis)
-		ribbon_rig = rbn.RibbonRig(joints = rig_jnts,
-						rig_name = self.rig_name,
-						feature_name = self.feature_name,
-						aim_axis = self.aim_axis,
-						up_axis = cross_axis,
-						num_nurb_subdivision = NUM_NURB_SUBDIVISION,
-						connection_type = self.connection_type,
-						scale = self.scale,
-						ctrl_parent = self.ctrl_grp,
-						mod_parent = self.mod_grp,
-						upper_bind_parent = bind_jnts[0],
-						lower_bind_parent = bind_jnts[1],
-						color = 'light'+self.color.capitalize(),
-						end_orient_loc =self.end_orient_loc,
-						**self.controller_kwargs)
+		# Ribbon Rig
+		if self.ribbon:
+			cross_axis = bb.axis_convert(self.aim_axis, 'cross_letter', self.up_axis)
+			ribbon_rig = rbn.RibbonRig(joints = rig_jnts,
+							rig_name = self.rig_name,
+							feature_name = self.feature_name,
+							aim_axis = self.aim_axis,
+							up_axis = self.up_axis,
+							num_nurb_subdivision = NUM_NURB_SUBDIVISION,
+							shape = RIBBON_CTRL_SHAPE,
+							connection_type = self.connection_type,
+							scale = self.scale,
+							ctrl_parent = self.ctrl_grp,
+							mod_parent = self.mod_grp,
+							upper_bind_parent = bind_jnts[0],
+							lower_bind_parent = bind_jnts[1],
+							color = 'light'+self.color.capitalize(),
+							end_orient_loc =self.end_orient_loc,
+							**self.controller_kwargs)
