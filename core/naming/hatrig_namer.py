@@ -31,17 +31,16 @@ class HatRigNamer(BaseNamer):
 	def format(self, base, element, number=None, side=None, suffix=None):
 		
 		formatted_side = parser.format_side(side, self.side_case)
-		mid_side = parser.format_side(side, 'upper')
-		if mid_side == 'M':
-			formatted_side = ''
-		if element:
+		mid_side = parser.format_side(side, self.side_case)
+		formatted_side = '' if mid_side == 'M' else mid_side
+		element_str = '_'.join(s.lower() for s in element) if element else ''
+
+		if element is not None:
 			if len(element) > 1:
 				elem_cap = [s.lower() for s in element]
 				element_str = '_'.join(elem_cap)
 			else:
-				element_str = element[0].lower() if element else ''
-		else: 
-			element_str = ''
+				element_str = element[0].lower() if len(list(element)) > 0 else ''
 
 		# split names by upper case
 		word_range = []

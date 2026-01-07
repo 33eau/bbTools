@@ -34,11 +34,6 @@ def find_element(full_name, element_list = templates.ELEMENTS):
 		match = pattern.search(full_name)
 		match = [match.group(0)] if match else []
 	return match
-	
-	# if match:
-	# 	return match
-	# else:
-	# 	return []
 
 def find_number(full_name, base_number=False):
 	pattern = re.compile(r'\d+')

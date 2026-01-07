@@ -289,7 +289,7 @@ class SuperRoot:
 		return ctrl
 	
 class SingleControl:
-	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', global_scale = '', upper_driver = '', delete_temp = False, color = '',  **kwargs):
+	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', global_scale = '', upper_driver = '', delete_temp = False, color = '', add_element = None,  **kwargs):
 		self.target_obj =  target_obj
 		self.bind_parent = bind_parent
 		self.ctrl_parent =  ctrl_parent
@@ -297,6 +297,7 @@ class SingleControl:
 		self.upper_driver =  upper_driver
 		self.delete_temp =  delete_temp
 		self.color = color
+		self.add_element =  add_element
 
 		self.side = kwargs.get('side', None)
 		self.create_joint = kwargs.get('create_joint', True)
@@ -322,12 +323,13 @@ class SingleControl:
 	def build(self, **kwargs):
 		name_data = get_naming_data(obj=self.target_obj)
 		base, element, number, side, suffix = NAMER.extract(self.target_obj)
-		element = element if element else []
 		drive_target = self.target_obj
-
+	
 		if self.create_joint:
 			base_name = parser.clean_name(base, ['tmp', 'temp'])
-			self.bind_jnt = bb.create_node('joint', base_name, element+['Bnd'], number, side)
+			if self.add_element:
+				element.append(self.add_element)
+			self.bind_jnt = bb.create_node('joint', base_name, element, number, side)
 			bb.snap([self.target_obj], self.bind_jnt)
 			if self.bind_parent and cmds.objExists(self.bind_parent):
 				cmds.parent(self.bind_jnt, self.bind_parent)
