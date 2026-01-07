@@ -464,50 +464,63 @@ def reset_color(objects=[], viewport=True, outliner=True, reset_all=False, *args
 			if cmds.attributeQuery('useOutlinerColor', node=obj, exists=True):
 				cmds.setAttr(f'{obj}.useOutlinerColor', 0)
 
-def duplicate_joint_chain(top_joint='', add_elements=[], remove_element='', radius = 1.0, color = None, ignore_jnts = []):
-	top_joint = top_joint or cmds.ls(sl=True)[0]
-	selected_chain = cmds.listRelatives(top_joint, ad=True)
-	selected_chain.append(top_joint)
-	selected_chain.reverse()
+def duplicate_joint_chain(joints = None, remove_element = None, add_elements = None, ignore_jnts = None):
+	'''
+	Duplicate joint chain
 	
-	pair_dict = {}
+	:param joints: List of joint names to duplicate.
+	:param remove_element: list of strings to remove from the original name.
+	:param add_elements: list of strings to add to the new joint names.
+	:param ignore_jnts: List of joints to skip.
+	:return: A dictionary with the elements as its keys. 
+			Example: {'fk': ['joint_01_fk_jnt', 'joint_02_fk_jnt']}
+	'''
+	joint = joints or []
+	remove_element = remove_element or 'tmp'
+	add_elements = add_elements or ['_']
+	ignore_jnts = ignore_jnts or []
+	
+	joint_dict= {}
+
+	input_jnts = [jnt for jnt in joints if jnt not in ignore_jnts]
+
 	parent_dict = {}
-	joints_dict = {}
+	for jnt in input_jnts:
+		parent = cmds.listRelatives(jnt, p = True)
+		if parent:
+			if parent[0] in joints:
+				parent_dict[jnt] = parent[0]	
+	
 	for elem in add_elements:
-		joints_dict[elem] = []
-		for i, jnt in enumerate(selected_chain):
-			if jnt in ignore_jnts:
-				continue
-			base, element, number, side, suffix = NAMER.extract(jnt)
-			joint_name = NAMER.format(base, [elem], number, side, suffix)
-			if remove_element in joint_name:
-				joint_name = parser.clean_name(joint_name, remove_element)
-			cmds.select(cl=True)
-			new_joint = cmds.joint(n=joint_name, rad = radius)
-			cmds.delete(cmds.parentConstraint(jnt, new_joint, mo=False))
-			freeze(new_joint)
+		joint_dict[elem] = []
+		pair_dict = {}
+		for jnt in input_jnts:
+			if remove_element:
+				orig_jnt = parser.clean_name(jnt, remove_element)
+									
+			base, element, number, side, _ = NAMER.extract(orig_jnt)
+			element.append(elem)
+			new_jnt = create_node('joint', base, element, number, side)
 			
-			pair_dict[jnt] = new_joint
-			parent = cmds.listRelatives(jnt, p=True)
-			if parent:
-				parent = parent[0]
-				parent_dict[jnt] = parent
-				if parent in pair_dict.keys():
-					cmds.parent(new_joint, pair_dict[parent])
-			else:
-				parent_dict[jnt] = ''
+			cmds.delete(cmds.parentConstraint(jnt, new_jnt, mo=False))
+			cmds.makeIdentity( new_jnt, a = True, t=True, r=True, s=True , n = False, pn = True)
+			for ax in 'XYZ':
+				attr = f'preferredAngle{ax}'
+				val = cmds.getAttr(f'{jnt}.{attr}')
+				cmds.setAttr(f'{new_jnt}.{attr}', val)
+				
+			pair_dict[jnt] = new_jnt
 
-			for AX in 'XYZ':
-				pref_val = cmds.getAttr(f'{jnt}.preferredAngle{AX}')
-				cmds.setAttr(f'{new_joint}.preferredAngle{AX}', pref_val)
-
-			joints_dict[elem].append(new_joint)
-
-			if color:
-				set_color([new_joint], color)
-
-	return joints_dict
+			if jnt in parent_dict.keys():
+				old_parent = parent_dict[jnt]
+				new_parent = pair_dict[old_parent]
+				cmds.parent(new_jnt, new_parent)
 		
+			joint_dict[elem].append(new_jnt)
+			
+			
+	return joint_dict
+
 def scale_shape(object, scale=1.0):
 	shape = cmds.listRelatives(object, s=True, f=True)[0]
 	node_type = cmds.nodeType(shape)
@@ -713,11 +726,13 @@ def create_guide_curve(ctrl = '', target = '', parent = '', curve_elem = 'guide'
 		cmds.setAttr( f'{guide_crv}.{attr}', k = False )
 		cmds.setAttr( f'{guide_crv}.{attr}', l = True )
 
-	base, element, number, side, suffix = NAMER.extract(ctrl) 
-	ctrl_clt_name = NAMER.format(base, element , number, side, '_clt')
-	target_clt_name = NAMER.format(base, element , number, side, '_clt')
-	clt_a = cmds.cluster( '{0}.cv[0]'.format( guide_crv ) , wn = ( ctrl , ctrl ), n = ctrl_clt_name )[ 0 ] 
-	clt_b = cmds.cluster( '{0}.cv[1]'.format( guide_crv ) , wn = ( target , target ), n = target_clt_name )[ 0 ] 
+	ctrl_base, ctrl_element, ctrl_number, ctrl_side, _ = NAMER.extract(ctrl) 
+	ctrl_clt_name = NAMER.format(ctrl_base, ctrl_element, ctrl_number, ctrl_side, '_clt')
+	target_clt_name = NAMER.format(base, element, number, side, '_clt')
+	clt_a = cmds.cluster( '{0}.cv[0]'.format( guide_crv ) , wn = ( ctrl , ctrl ))[ 0 ] 
+	clt_a = cmds.rename(clt_a, ctrl_clt_name)
+	clt_b = cmds.cluster( '{0}.cv[1]'.format( guide_crv ) , wn = ( target , target ))[ 0 ] 
+	clt_b = cmds.rename(clt_b, target_clt_name)
 	cmds.select( cl = True )
 
 	cmds.setAttr( '{0}.ove'.format( guide_crv ), 1)
