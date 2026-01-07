@@ -105,7 +105,7 @@ class SpineRig:
 
 		if not self.rig_on_provided_joints:
 			element_names = ['Spline', 'Bnd']
-			joints = bb.duplicate_joint_chain(self.joints[0], add_elements=element_names, remove_element='tmp')
+			joints = bb.duplicate_joint_chain(self.joints, add_elements=element_names, remove_element='tmp')
 
 		rig_jnts = joints[element_names[0]]
 		cmds.parent(rig_jnts[0], ik_mod_grp)
