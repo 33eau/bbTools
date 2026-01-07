@@ -126,7 +126,7 @@ class RibbonRig:
 			cmds.setAttr( f'{follicle_shp}.parameterU', u_position)
 			cmds.setAttr( f'{follicle_shp}.parameterV', 0.5)
 			cmds.parent(follicle, follicle_grp)
-			bind_jnt = bb.create_node('joint', self.rig_name, ['bind'], f'{i+1:02d}', self.side)
+			bind_jnt = bb.create_node('joint', self.rig_name, [self.feature_name, 'bnd'], f'{i+1:02d}', self.side)
 			bb.create_constrain([follicle], bind_jnt, type = 'parent', maintain_offset=False)
 			if self.upper_bind_parent:
 				if i < (len(self.joints)/2):
