@@ -117,6 +117,7 @@ class LimbRig:
 		self.mod_grp = None
 		self.bind_jnts = None
 		self.ctrl_dict = {}
+		self.setting_ctrl = None
 
 		self._build()
 		bb.over_and_out('LimbRig', f'{self.side}{self.rig_name}')
@@ -253,3 +254,6 @@ class LimbRig:
 							color = 'light'+self.color.capitalize(),
 							end_orient_loc =self.end_orient_loc,
 							**self.controller_kwargs)
+		
+		self.setting_ctrl = setting_ctrl
+		self.bind_jnts = bind_jnts

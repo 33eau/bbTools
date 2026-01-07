@@ -303,18 +303,14 @@ class SingleControl:
 
 		if not self.side:
 			self.side = parser.find_element(self.target_obj, 'sides')
-			if self.side:
-				if not self.color:
-					formatted_side = parser.format_side(self.side, 'upper')
-					default_color = shape_color.CTRL_COLOR[formatted_side]
-			else:
-				if not self.color:
-					default_color = 'yellow'
-				else:
-					default_color = self.color
 
-		self.color = kwargs.get('color', default_color)
-		
+		if self.color is None:
+			formatted_side = parser.format_side(self.side, 'upper')
+			color = shape_color.CTRL_COLOR.get(formatted_side, 'yellow')
+			self.color = color
+		else: 
+			self.color =  color 
+
 		# Return result
 		self.single_ctrl = None
 		self.offset_grps = None

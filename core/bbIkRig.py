@@ -143,7 +143,7 @@ class IkRig:
 					)
 		self.ik_end_ctrl = ikh_end_controller.ctrls[0]
 		ik_end_grps = ikh_end_controller.offset_grps[0]
-		if self.base_orient_loc:
+		if self.end_orient_loc:
 			bb.snap([self.end_orient_loc], ik_end_grps[0])
 
 		bb.add_enum_space_switch(parent_spaces = [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_end_grps[1], ctrl=self.ik_end_ctrl, type = 'parent', default_index= self.default_ik_end)

@@ -95,7 +95,6 @@ class RibbonRig:
 		bb.freeze(nurb_a_crv, r=False)
 		for i in range(0, bb.get_cv_count(nurb_a_crv)+1):
 			cmds.xform(f'{nurb_a_crv}.cv[{i}]', t = joint_positions[i], ws=True)
-
 		nurb_a_crv = cmds.rebuildCurve(nurb_a_crv, ch=False, rpo=True, rt=False, end=True, kr=False, kcp=False, kep=True, kt=False, s=self.num_nurb_subdivision, d=3, tol=0.01)
 		nurb_b_crv = cmds.duplicate(nurb_a_crv, n='nurb_b_crv')[0]
 		a_move_value = [item * 2 for item in up_axis_vector]
@@ -152,7 +151,6 @@ class RibbonRig:
 		up_controller = bc.Controller(objects = [up_joint],
 						offset_names = ['Zro', 'Offset'],
 						main_ctrl_grp = self.ctrl_grp,
-						shape = 'crossCircle',
 						color = 'sky',
 						connection_type = 'parent',
 						scale = self.scale,
@@ -165,7 +163,6 @@ class RibbonRig:
 		lo_controller = bc.Controller(objects = [lo_joint],
 								offset_names = ['Zro', 'aim', 'Offset'],
 								main_ctrl_grp = self.ctrl_grp,
-								shape = 'crossCircle',
 								color = 'sky',
 								connection_type = 'parent',
 								scale = self.scale,
@@ -178,7 +175,6 @@ class RibbonRig:
 		mid_controller = bc.Controller(objects = [mid_jnts_grp],
 								offset_names = ['Zro', 'Offset'],
 								main_ctrl_grp = self.ctrl_grp,
-								shape = 'crossCircle',
 								color = 'sky',
 								connection_type = 'point',
 								scale = self.scale,
@@ -211,6 +207,8 @@ class RibbonRig:
 		twist_grp= twist_grp[twist_jnt]
 		if self.end_orient_loc:
 			bb.snap(parents=[self.end_orient_loc], target=twist_grp[0])
+		else:
+			bb.snap(parents=[self.joints[2]], target=twist_grp[0])
 		bb.create_constrain([self.joints[2]], twist_grp[0], type='parent')
 		neg_aim_axis_vector = [ax * -1 for ax in aim_axis_vector]
 		cmds.aimConstraint(self.joints[1], twist_grp[1], aimVector=neg_aim_axis_vector, upVector=neg_aim_axis_vector, worldUpType= 'object', worldUpObject = self.joints[1], mo = True)

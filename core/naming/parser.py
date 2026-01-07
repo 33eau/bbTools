@@ -90,7 +90,8 @@ def get_base_name(full_name, base_number = True, first_name = False):
 			base_name = base_name[:first_word]
 	if num:
 		if base_number:
-			base_name = full_name+num
+			########### BASE NUMBER ###########
+			base_name = full_name + '_' + num
 		else:
 			base_name = clean_name(full_name, num)
 	

@@ -55,6 +55,7 @@ TYPE_SUFFIX={
 'ikHandle'				: 'ikh',
 'ikEffector'			: 'eff',
 
+'absolute'				: 'abs',
 'addDoubleLinear'   	: 'adl',
 'blendColors'       	: 'bcl',
 'blendTwoAttr'      	: 'bta',

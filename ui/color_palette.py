@@ -2,11 +2,11 @@ import maya.cmds as cmds
 from functools import partial
 from importlib import reload
 from bbTools.core.utils import rig_utils as bb
-from bbTools.core.data import constants
+from bbTools.core.controllers import shape_color
 reload(bb)
-reload(constants)
+reload(shape_color)
 
-COLORS = constants.COLORS
+COLORS = shape_color.COLORS
 
 def set_color_wrapper(color, viewport_checkBox, outliner_checkBox, *args):
 	viewport_checked = cmds.checkBox(viewport_checkBox, q=True, value=True)
@@ -24,12 +24,6 @@ def UI():
 	window_name = "bbColorPalette"
 	if cmds.window(window_name, exists = True):
 		cmds.deleteUI(window_name, window = True)
-
-	# BG_COLOR = (0.18, 0.18, 0.19)
-	# # 2. Action Accent Color: Saturated Orange
-	# RESET_ALL_COLOR = (0.85, 0.15, 0.45)
-	# # 3. Standard Action Color: Default Dark Gray
-	# RESET_COLOR = (0.35, 0.35, 0.38)
 	
 	BG_COLOR = (0.145, 0.149, 0.18)
 	RESET_ALL_COLOR = (0.8, 0.102, 0.702)

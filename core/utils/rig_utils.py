@@ -1,6 +1,7 @@
 #import maya.cmds as cmds
 from importlib import reload
 import maya.cmds as cmds
+import maya.mel as mel
 import maya.OpenMaya as om
 import numpy as np
 
@@ -308,7 +309,7 @@ def _normalize_constraint_type(type):
 			return name
 	return type	
 
-def create_constrain( parents=[], target=None, type="pac", maintain_offset=True, snap=False):
+def create_constrain( parents=[], target=None, type="pac", maintain_offset=True):
 	type = _normalize_constraint_type(type)
 	parents = parents if parents else(cmds.ls(sl=True)[:-1] or [])
 	target = target or (cmds.ls(sl=True) or [])[-1]
@@ -326,10 +327,6 @@ def create_constrain( parents=[], target=None, type="pac", maintain_offset=True,
 		change_interp_type = True
 		if type == 'point':
 			change_interp_type = False
-
-	if snap:
-		temp_constraint = getattr(cmds, f"{type}Constraint")(parents, target, mo = False)
-		cmds.delete(temp_constraint)
 	
 	if type == "parentScale":
 		pac_name = NAMER.format(base, element , number, side, 'pac')
@@ -357,12 +354,13 @@ def sel():
 	sel = cmds.ls(sl=True)
 	return sel
 
-def snap(parents=[], target=None):
+def snap(parents=[], target=None, type = 'parent'):
 	if not target:
 		target = cmds.ls(sl=True)[-1]
 		parents = cmds.ls(sl=True)[:-1]
-	cmds.delete(cmds.parentConstraint(parents, target, mo=False))
-	#cmds.matchTransform(target, parents)
+	node = create_constrain(parents, target, type=type, maintain_offset = False)[0]
+	cmds.delete(node)
+
 
 def get_center_position(components):
 	x, y, z = [], [], []
@@ -466,7 +464,7 @@ def reset_color(objects=[], viewport=True, outliner=True, reset_all=False, *args
 			if cmds.attributeQuery('useOutlinerColor', node=obj, exists=True):
 				cmds.setAttr(f'{obj}.useOutlinerColor', 0)
 
-def duplicate_joint_chain(top_joint='', add_elements=[], remove_element='', radius = 1.0, color = None):
+def duplicate_joint_chain(top_joint='', add_elements=[], remove_element='', radius = 1.0, color = None, ignore_jnts = []):
 	top_joint = top_joint or cmds.ls(sl=True)[0]
 	selected_chain = cmds.listRelatives(top_joint, ad=True)
 	selected_chain.append(top_joint)
@@ -478,6 +476,8 @@ def duplicate_joint_chain(top_joint='', add_elements=[], remove_element='', radi
 	for elem in add_elements:
 		joints_dict[elem] = []
 		for i, jnt in enumerate(selected_chain):
+			if jnt in ignore_jnts:
+				continue
 			base, element, number, side, suffix = NAMER.extract(jnt)
 			joint_name = NAMER.format(base, [elem], number, side, suffix)
 			if remove_element in joint_name:
@@ -489,19 +489,17 @@ def duplicate_joint_chain(top_joint='', add_elements=[], remove_element='', radi
 			
 			pair_dict[jnt] = new_joint
 			parent = cmds.listRelatives(jnt, p=True)
-			#parent = parent[0] if parent else ''
 			if parent:
 				parent = parent[0]
 				parent_dict[jnt] = parent
 				if parent in pair_dict.keys():
 					cmds.parent(new_joint, pair_dict[parent])
-				else:
-					try:
-						cmds.parent(new_joint, w=True)
-					except:
-						pass
 			else:
 				parent_dict[jnt] = ''
+
+			for AX in 'XYZ':
+				pref_val = cmds.getAttr(f'{jnt}.preferredAngle{AX}')
+				cmds.setAttr(f'{new_joint}.preferredAngle{AX}', pref_val)
 
 			joints_dict[elem].append(new_joint)
 
@@ -733,6 +731,12 @@ def create_guide_curve(ctrl = '', target = '', parent = '', curve_elem = 'guide'
 	return guide_crv
 
 def set_driven_key(main_ctrl='', attr = '', driven = '', values = {0:0,	180:-50,-180:50}):
+	
+	if not cmds.attributeQuery(attr, node=main_ctrl, exists=True):
+		min_val = min(values.keys())
+		max_val = max(values.keys())
+		cmds.addAttr( main_ctrl, ln = attr, at = 'float', min = min_val, max = max_val, dv = 0, k = True )
+
 	driver = f'{main_ctrl}.{attr}'
 	len_keys = len(values.keys())
 	i = 0
@@ -751,14 +755,9 @@ def set_driven_key(main_ctrl='', attr = '', driven = '', values = {0:0,	180:-50,
 		key = cmds.listConnections(f'{driven}', type='animCurve')[0]
 		cmds.setAttr( f'{key}.preInfinity', 1)
 		cmds.setAttr( f'{key}.postInfinity', 1)
-		# print( f'key {i} :::: {tangent_in} , {tangent_out}')
-		# print( f'{driver} ——— {driver_value}')
-		# print( f'{driven} ——— {driven_value}')
-		# print('===========================================================')
-		# print('===========================================================')
 		i+=1
 
-def pole_vector_position(joints, offset = 5, create_locator=True):
+def pole_vector_position(joints, offset = 1, create_output='joint', name = None):
 	base_position = cmds.xform( joints[0], q = True, t = True, ws = True ) 
 	mid_position = cmds.xform( joints[1], q = True, t = True, ws = True ) 
 	end_position = cmds.xform( joints[2], q = True, t = True, ws = True )
@@ -779,10 +778,13 @@ def pole_vector_position(joints, offset = 5, create_locator=True):
 
 	pv_posi_vector = ( mid_vector - project_vector ).normal() * total_len * offset + mid_vector
 
-	if create_locator:
-		locator = cmds.spaceLocator()[0]
-		cmds.move( pv_posi_vector[0], pv_posi_vector[1], pv_posi_vector[2], locator, r = True  )
-		return locator
+	side = parser.find_element(joints[0], 'sides')
+	elem = 'pv' if name else 'position'
+	name = name if name else 'pv'
+	if create_output:
+		output_obj = create_node(create_output, name, [elem], None, side)
+		cmds.move( pv_posi_vector[0], pv_posi_vector[1], pv_posi_vector[2], output_obj, r = True  )
+		return output_obj
 	return [pv_posi_vector[0], pv_posi_vector[1], pv_posi_vector[2]]
 
 def attr_separator(ctrl, ln='extra', enum_name = '—————'):
@@ -797,11 +799,13 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 							ctrl = 'r_thigh_fk_ctl',
 							type = 'orient',
 							default_index = 1,
-							mod_grp = 'Modules_grp'
+							mod_grp = None
 						):
 
 	if not cmds.objExists('spaces_grp'):
-		spaces_grp = create_node('group', 'spaces', None, None, None, p=mod_grp)
+		spaces_grp = create_node('group', 'spaces', None, None, None)
+		if mod_grp:
+			cmds.parent(spaces_grp, mod_grp)
 	else:
 		spaces_grp = 'spaces_grp'
 		
@@ -844,6 +848,7 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 
 def over_and_out(module_name = '', output_name = ''):
 	cmds.select(cl=True)
+	output_name = output_name.replace('None', '')
 	print(f'Created\t{module_name}:\t\t{output_name}')
 
 

@@ -29,7 +29,7 @@ class FKRig:
 				squash=False,
 				aim_axis='x',
 				up_axis = 'y',
-				offset_names=[],
+				offset_names=None,
 				shape='crossCircle',
 				color=None,
 				connection_type='parent',
@@ -45,7 +45,7 @@ class FKRig:
 		self.element_name = element_name
 		self.stretch = stretch
 		self.squash = squash
-		self.offset_names = offset_names
+		self.offset_names = offset_names or ['zro', 'offset']
 		self.shape =  shape
 		self.aim_axis =  aim_axis
 		self.up_axis =  up_axis
@@ -80,16 +80,17 @@ class FKRig:
 		self.ctrls, self.grps = self._build()
 
 	def _build(self):
-		self.ctrl_grp = bb.create_node('group', self.rig_name, elements=[self.element_name, 'ctrl'], side = self.side, p=self.ctrl_parent)
+		if self.rig_name:
+			self.ctrl_grp = bb.create_node('group', self.rig_name, elements=[self.element_name, 'ctrl'], side = self.side, p=self.ctrl_parent)
+		main_ctrl_grp = self.ctrl_grp if self.rig_name else None
 		if not self.rig_end_joint:
 			self.rig_joints = self.joints[:-1]
 		else:
 			self.rig_joints = self.joints
 
-		offset_names = ['zro', 'offset']
 		fk_rig = bc.Controller(objects = self.rig_joints, 
-						main_ctrl_grp = self.ctrl_grp, 
-						offset_names = offset_names, 
+						main_ctrl_grp = main_ctrl_grp, 
+						offset_names = self.offset_names, 
 						shape = self.shape, 
 						color = self.color, 
 						connection_type = self.connection_type ,
@@ -112,12 +113,12 @@ class FKRig:
 		squash_attr_name = self.squash_attr
 		aim_attr = bb.axis_convert(self.aim_axis, 'absolute_letter')
 
-		if not self.rig_end_joint:
-			self.stretch_ctrls = self.ctrls
-		else:
-			self.stretch_ctrls = self.ctrls[:-1]
-		
-		for i, ctrl in enumerate(self.stretch_ctrls):
+		# if self.rig_end_joint:
+		# 	stretch_ctrls = self.ctrls
+		# else:
+		# 	stretch_ctrls = self.ctrls[:-1]
+		stretch_ctrls = self.ctrls[:-1]
+		for i, ctrl in enumerate(stretch_ctrls):
 			stretch_grp = self.grps[i+1][0]
 			number = parser.find_number(ctrl)
 			original_posi = cmds.getAttr(f'{self.rig_joints[i+1]}.t{aim_attr}')
