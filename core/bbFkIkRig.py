@@ -144,7 +144,7 @@ class FkIkRig:
 		if self.mod_parent:
 			cmds.parent(self.mod_grp, self.mod_parent)
 
-		generated_joints = bb.duplicate_joint_chain(self.joints[0], add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_obj])
+		generated_joints = bb.duplicate_joint_chain(self.joints, add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_obj])
 		fk_jnts = generated_joints['fk']
 		ik_jnts = generated_joints['ik']
 		rig_jnts = generated_joints['rig']
@@ -152,7 +152,6 @@ class FkIkRig:
 
 		cmds.parent(fk_jnts[0], ik_jnts[0], rig_jnts[0], self.jnt_grp)
 		cmds.parent(bind_jnts[0], self.bind_parent)
-
 
 		ik_rig = ik.IkRig( joints = ik_jnts,
 						pole_vector_jnt = self.pole_vector_jnt,

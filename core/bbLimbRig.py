@@ -120,6 +120,7 @@ class LimbRig:
 		self.setting_ctrl = None
 
 		self._build()
+		print(self.bind_jnts)
 		bb.over_and_out('LimbRig', f'{self.side}{self.rig_name}')
 	
 	def _build(self):
@@ -130,7 +131,7 @@ class LimbRig:
 		jnt_grp = bb.create_node('group', base, element + ['Jnt'], number, self.side, p=self.mod_grp)
 		bb.create_constrain([self.upper_driver], self.ctrl_grp)
 
-		generated_joints = bb.duplicate_joint_chain(self.joints[0], add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_jnt])
+		generated_joints = bb.duplicate_joint_chain(self.joints, add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_jnt])
 		fk_jnts = generated_joints['fk']
 		ik_jnts = generated_joints['ik']
 		rig_jnts = generated_joints['rig']

@@ -198,9 +198,6 @@ class IkRig:
 			jnt_len = cmds.getAttr(f'{jnt}.t{aim_attr}')
 			total_len += abs(jnt_len)
 
-
-
-
 		global_scale_mdl = bb.create_node('multDoubleLinear', self.rig_name, ['global', 'scale'], self.number, self.side)
 		cmds.setAttr( f'{global_scale_mdl}.i1', total_len )
 		cmds.connectAttr(self.global_scale, f'{global_scale_mdl}.i2')

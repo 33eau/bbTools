@@ -162,6 +162,9 @@ class FingerRig:
 
 		if self.end_orient_loc == 'end_joint':
 			self.end_loc_list = []
+
+		if self.base_orient_loc == 'base_joint':
+			self.base_loc_list = []
 			
 		self.ctrl_grp = None
 		self.mod_grp = None
@@ -174,7 +177,7 @@ class FingerRig:
 	def _build(self):
 		if self.feature == 'fk':
 			for i, finger in enumerate(self.joint_list):
-				generated_joints = bb.duplicate_joint_chain(finger[0], add_elements=['fk'], remove_element='tmp')
+				generated_joints = bb.duplicate_joint_chain(finger, add_elements=['fk'], remove_element='tmp')
 				fk_jnts = generated_joints['fk']
 				finger_fk = fk.FKRig(
 						joints=fk_jnts,
@@ -210,15 +213,27 @@ class FingerRig:
 					bb.snap([finger[-1]], end_loc)
 					self.end_loc_list.append(end_loc)
 
+			if self.base_orient_loc == 'base_joint':
+				for i, finger in enumerate(self.joint_list):
+					base_loc = bb.create_node('locator', self.finger_names[i], ['base', 'orient'], None, self.side)
+					bb.snap([finger[1]], base_loc)
+					self.base_loc_list.append(base_loc)
+
 			if self.feature == 'ik':
 				for i, finger in enumerate(self.joint_list):	
 					if self.end_orient_loc == 'end_joint':
 						end_orient_loc = self.end_loc_list[i]
 					else:
 						end_orient_loc = self.end_orient_loc
+					
+					if self.base_orient_loc == 'base_joint':
+						base_orient_loc = self.base_loc_list[i]
+					else:
+						base_orient_loc = self.base_orient_loc
 
-					generated_joints = bb.duplicate_joint_chain(finger[0], add_elements=['ik'], remove_element='tmp')
+					generated_joints = bb.duplicate_joint_chain(finger, add_elements=['ik'], remove_element='tmp')
 					ik_jnts = generated_joints['ik']
+
 					base_rig = bc.SingleControl(target_obj=ik_jnts[0], 
 												bind_parent=self.bind_parent, 
 												ctrl_parent=self.ctrl_parent, 
@@ -226,7 +241,9 @@ class FingerRig:
 												color = self.color, 
 												shape = FK_BASE_CTRL_SHAPE,
 												shape_rotation = [90, 90, 0],
-												global_scale = self.global_scale)
+												global_scale = self.global_scale,
+												create_joint = True,
+												add_element = 'bind')
 					
 					ik_rig = ik.IkRig( joints = ik_jnts[1:],
 								pole_vector_jnt = self.pv_jnt_list[i],
@@ -243,7 +260,7 @@ class FingerRig:
 								stretch_attr = self.stretch_attr,
 								squash_attr = self.squash_attr,
 								global_scale = self.global_scale,
-								base_orient_loc = self.base_orient_loc,
+								base_orient_loc = base_orient_loc,
 								end_orient_loc = end_orient_loc,
 								world_space = self.world_space,
 								ctrl_parent = base_rig.single_ctrl,
@@ -262,6 +279,12 @@ class FingerRig:
 						end_orient_loc = self.end_loc_list[i]
 					else:
 						end_orient_loc = self.end_orient_loc
+					
+					if self.base_orient_loc == 'base_joint':
+						base_orient_loc = self.base_loc_list[i]
+					else:
+						base_orient_loc = self.base_orient_loc
+
 					base_rig = bc.SingleControl(target_obj=finger[0], 
 									bind_parent=self.bind_parent, 
 									ctrl_parent=self.ctrl_parent, 
@@ -269,7 +292,9 @@ class FingerRig:
 									color = self.color, 
 									shape = FK_BASE_CTRL_SHAPE,
 									shape_rotation = [90, 90, 0],
-									global_scale = self.global_scale)
+									global_scale = self.global_scale,
+									create_joint = True,
+									add_element = 'bind')
 
 					fkIk_rig_jnts = finger[1:]
 					finger_rig = fkIk.FkIkRig(joints = fkIk_rig_jnts,
@@ -288,7 +313,7 @@ class FingerRig:
 						stretch_attr = self.stretch_attr,
 						squash_attr = self.squash_attr,
 						global_scale = self.global_scale,
-						base_orient_loc = self.base_orient_loc,
+						base_orient_loc = base_orient_loc,
 						end_orient_loc = end_orient_loc,
 						world_space = self.world_space,
 						ctrl_parent = base_rig.single_ctrl,
@@ -307,7 +332,9 @@ class FingerRig:
 				cmds.error(f'Incorrect @feature: {self.feature}. Support feature: "fk", "ik", "fkIk"')
 		if self.end_orient_loc == 'end_joint':
 			cmds.delete(self.end_loc_list)
-		#print(self.ctrl_dict)
+		if self.base_orient_loc == 'base_joint':
+			cmds.delete(self.base_loc_list)
+
 		if self.finger_pose:
 			path = io.define_path(POSE_FOLDER)
 			pose_dict = io.import_data(POSE_FILE, folder_name = POSE_FOLDER, path = path)
