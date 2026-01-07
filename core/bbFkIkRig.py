@@ -104,7 +104,7 @@ class FkIkRig:
 
 		if self.color is None:
 			formatted_side = parser.format_side(self.side, 'upper')
-			color = shape_color.CTRL_COLOR.get(formatted_side, [0,5, 0.5, 0.5])
+			color = shape_color.CTRL_COLOR.get(formatted_side, 'yellow')
 			self.color = color
 		else: 
 			self.color =  color 
@@ -139,6 +139,10 @@ class FkIkRig:
 		self.ctrl_grp = bb.create_node('group', self.rig_name, [self.feature, 'ctrl'], None, self.side)
 		self.mod_grp = bb.create_node('group', self.rig_name, [self.feature, 'mod'], None, self.side)
 		self.jnt_grp = bb.create_node('group', self.rig_name, [self.feature, 'jnt'], None, self.side, p=self.mod_grp)
+		if self.ctrl_parent:
+			cmds.parent(self.ctrl_grp, self.ctrl_parent)
+		if self.mod_parent:
+			cmds.parent(self.mod_grp, self.mod_parent)
 
 		generated_joints = bb.duplicate_joint_chain(self.joints[0], add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_obj])
 		fk_jnts = generated_joints['fk']
@@ -177,6 +181,7 @@ class FkIkRig:
 						default_ik_end = self.default_ik_end,
 						base_parent_type = self.base_parent_type
 						)
+		self.ik_ctrls = ik_rig.ctrls
 		ik_ctrl_grp = ik_rig.ctrl_grp
 		ik_mod_grps = ik_rig.mod_grp
 
@@ -199,19 +204,21 @@ class FkIkRig:
 						rig_end_joint=self.rig_end_joint
 						)
 		fk_ctrl_grp = fk_rig.ctrl_grp
-		fk_ctrls = fk_rig.ctrls	
+		self.fk_ctrls = fk_rig.ctrls	
 		fk_grps = fk_rig.grps	
+
+		self.ctrl_dict['fk'] = self.fk_ctrls
+		self.ctrl_dict['ik'] = self.ik_ctrls
 
 		if self.end_orient_loc:
 			bb.snap([self.end_orient_loc], fk_grps[-1][0] )
 
-		for ctrl, jnt in zip(fk_ctrls, fk_jnts):
+		for ctrl, jnt in zip(self.fk_ctrls, fk_jnts):
 			bb.create_constrain([ctrl], jnt, self.connection_type)
 		
-		if self.setting_obj == None:
+		if self.setting_obj is None:
 			self.setting_obj = self.ctrl_parent
-
-		if cmds.objectType(self.setting_obj) == 'joint':
+		elif cmds.objectType(self.setting_obj) == 'joint':
 			setting_controller = bc.Controller( 
 								objects = [self.setting_obj],
 								main_ctrl_grp = self.ctrl_grp,
