@@ -105,6 +105,7 @@ class FingerRig:
 				default_ik_pv = 1,
 				default_ik_end = 1,
 				finger_pose = False,
+				log=False,
 				**controller_kwargs
 				):
 		
@@ -159,20 +160,15 @@ class FingerRig:
 		self.up_vector = bb.axis_convert(up_axis, 'vector')
 		default_shape_rotation = [item * 90 for item in self.up_vector]
 		self.shape_rotation = controller_kwargs.get('shape_rotation', default_shape_rotation)
-
-		if self.end_orient_loc == 'end_joint':
-			self.end_loc_list = []
-
-		if self.base_orient_loc == 'base_joint':
-			self.base_loc_list = []
-			
+		
 		self.ctrl_grp = None
 		self.mod_grp = None
 		self.bind_jnts = None
 		self.ctrl_dict = {}
 
 		self._build()
-		#bb.over_and_out('LimbRig', f'{self.side}{self.rig_name}')
+		if log:
+			bb.over_and_out('FingerRig', f'{self.side}{self.rig_name}')
 
 	def _build(self):
 		if self.feature == 'fk':
@@ -194,7 +190,8 @@ class FingerRig:
 						stretch_attr = self.stretch_attr,
 						squash_attr = self.squash_attr,
 						rig_end_joint = False,
-						shape_rotation = [0, 0, 90]
+						shape_rotation = [0, 0, 90],
+						upper_driver = self.upper_driver
 						)
 				self.ctrl_dict[self.finger_names[i]] = finger_fk.ctrls
 
@@ -221,20 +218,11 @@ class FingerRig:
 
 			if self.feature == 'ik':
 				for i, finger in enumerate(self.joint_list):	
-					if self.end_orient_loc == 'end_joint':
-						end_orient_loc = self.end_loc_list[i]
-					else:
-						end_orient_loc = self.end_orient_loc
-					
-					if self.base_orient_loc == 'base_joint':
-						base_orient_loc = self.base_loc_list[i]
-					else:
-						base_orient_loc = self.base_orient_loc
-
 					generated_joints = bb.duplicate_joint_chain(finger, add_elements=['ik'], remove_element='tmp')
 					ik_jnts = generated_joints['ik']
 
 					base_rig = bc.SingleControl(target_obj=ik_jnts[0], 
+												upper_driver=self.upper_driver,
 												bind_parent=self.bind_parent, 
 												ctrl_parent=self.ctrl_parent, 
 												scale = self.scale * 4, 
@@ -260,8 +248,8 @@ class FingerRig:
 								stretch_attr = self.stretch_attr,
 								squash_attr = self.squash_attr,
 								global_scale = self.global_scale,
-								base_orient_loc = base_orient_loc,
-								end_orient_loc = end_orient_loc,
+								base_orient_loc = self.base_orient_loc,
+								end_orient_loc = self.end_orient_loc,
 								world_space = self.world_space,
 								ctrl_parent = base_rig.single_ctrl,
 								mod_parent = self.mod_grp,
@@ -275,17 +263,8 @@ class FingerRig:
 				
 			elif self.feature == 'fkIk':
 				for i, finger in enumerate(self.joint_list):
-					if self.end_orient_loc == 'end_joint':
-						end_orient_loc = self.end_loc_list[i]
-					else:
-						end_orient_loc = self.end_orient_loc
-					
-					if self.base_orient_loc == 'base_joint':
-						base_orient_loc = self.base_loc_list[i]
-					else:
-						base_orient_loc = self.base_orient_loc
-
 					base_rig = bc.SingleControl(target_obj=finger[0], 
+									upper_driver = self.upper_driver,
 									bind_parent=self.bind_parent, 
 									ctrl_parent=self.ctrl_parent, 
 									scale = self.scale * 4, 
@@ -313,8 +292,8 @@ class FingerRig:
 						stretch_attr = self.stretch_attr,
 						squash_attr = self.squash_attr,
 						global_scale = self.global_scale,
-						base_orient_loc = base_orient_loc,
-						end_orient_loc = end_orient_loc,
+						base_orient_loc = self.base_orient_loc,
+						end_orient_loc = self.end_orient_loc,
 						world_space = self.world_space,
 						ctrl_parent = base_rig.single_ctrl,
 						mod_parent = self.mod_grp,
@@ -330,10 +309,6 @@ class FingerRig:
 					cmds.parent(base_rig.offset_grps[0], self.ctrl_grp)
 			else:
 				cmds.error(f'Incorrect @feature: {self.feature}. Support feature: "fk", "ik", "fkIk"')
-		if self.end_orient_loc == 'end_joint':
-			cmds.delete(self.end_loc_list)
-		if self.base_orient_loc == 'base_joint':
-			cmds.delete(self.base_loc_list)
 
 		if self.finger_pose:
 			path = io.define_path(POSE_FOLDER)

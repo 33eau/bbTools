@@ -62,6 +62,7 @@ class FkIkRig:
 				create_bind_joint = True,
 				rig_end_joint = False,
 				base_parent_type = 'parent',
+				log=False,
 				**controller_kwargs
 				):
 		
@@ -95,6 +96,7 @@ class FkIkRig:
 		self.create_bind_joint =  create_bind_joint
 		self.rig_end_joint =  rig_end_joint
 		self.base_parent_type =  base_parent_type
+		self.log =  log
 		self.controller_kwargs =  controller_kwargs
 	
 		if side is None :
@@ -133,7 +135,8 @@ class FkIkRig:
 		self.ik_ctrls = None
 
 		self._build()
-		bb.over_and_out('FkIk Rig', f'{self.side}{self.rig_name}')
+		if log:
+			bb.over_and_out('FkIk Rig', f'{self.side}{self.rig_name}')
 	
 	def _build(self):
 		self.ctrl_grp = bb.create_node('group', self.rig_name, [self.feature, 'ctrl'], None, self.side)

@@ -129,7 +129,7 @@ class RibbonRig:
 			bind_jnt = bb.create_node('joint', self.rig_name, [self.feature_name, 'bnd'], f'{i+1:02d}', self.side)
 			bb.create_constrain([follicle], bind_jnt, type = 'parent', maintain_offset=False)
 			if self.upper_bind_parent:
-				if i < (len(self.joints)/2):
+				if i < (subdivision)/2:
 					cmds.parent(bind_jnt, self.upper_bind_parent)
 				else:
 					cmds.parent(bind_jnt, self.lower_bind_parent)

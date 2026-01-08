@@ -19,6 +19,7 @@ NAMER = naming.get_namer(NAME_TEMPLATE)
 class IkRig:
 	def __init__(self,
 				joints = None,
+				end_rotation_jnts = [],
 				pole_vector_jnt = None,
 				rig_name = 'leg',
 				side = None,
@@ -48,6 +49,7 @@ class IkRig:
 				**controller_kwargs
 				):
 		self.joints =  joints
+		self.end_rotation_jnts =  end_rotation_jnts
 		self.pole_vector_jnt =  pole_vector_jnt
 		self.rig_name =  rig_name
 		self.element_name =  element_name
@@ -80,7 +82,7 @@ class IkRig:
 			self.side = parser.find_element(joints[0], 'sides')
 		else:
 			self.side =  side
-
+		
 		self.ctrl_grp = None
 		self.mod_grp = None
 		self.ctrls = None
@@ -122,10 +124,9 @@ class IkRig:
 					** self.controller_kwargs
 					)
 		self.ik_base_ctrl = ik_base_controller.ctrls[0]
-		ik_base_grp = ik_base_controller.offset_grps[0][0]
-		if self.base_orient_loc:
-			bb.snap([self.base_orient_loc], ik_base_grp)
-		bb.add_enum_space_switch( [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_base_grp, ctrl= self.ik_base_ctrl, type = self.base_parent_type, default_index=self.default_ik_base)	
+		ik_base_grp = ik_base_controller.offset_grps[0]
+
+		bb.add_enum_space_switch( [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_base_grp[0], ctrl= self.ik_base_ctrl, type = self.base_parent_type, default_index=self.default_ik_base)	
 
 		ikh_end_controller = bc.Controller(objects = [ikh],
 					name=self.rig_name+'_ik',
@@ -143,8 +144,26 @@ class IkRig:
 					)
 		self.ik_end_ctrl = ikh_end_controller.ctrls[0]
 		ik_end_grps = ikh_end_controller.offset_grps[0]
-		if self.end_orient_loc:
+
+		# ————————————————————————————————————————————————————
+		##################### Base Orient #####################
+		if self.base_orient_loc is None:
+			base_orient_loc = bb.create_node('locator', self.rig_name, ['end', 'orient'], None, self.side)
+			bb.snap([self.joints[0]], base_orient_loc)
+			bb.snap([base_orient_loc], ik_base_grp[0])
+			cmds.delete(base_orient_loc)
+		else:
+			bb.snap([self.base_orient_loc], ik_base_grp[0])
+
+		##################### End Orient #####################
+		if self.end_orient_loc is None:
+			end_orient_loc = bb.create_node('locator', self.rig_name, ['end', 'orient'], None, self.side)
+			bb.snap([self.joints[-1]], end_orient_loc)
+			bb.snap([end_orient_loc], ik_end_grps[0])
+			cmds.delete(end_orient_loc)
+		else:
 			bb.snap([self.end_orient_loc], ik_end_grps[0])
+		# ————————————————————————————————————————————————————
 
 		bb.add_enum_space_switch(parent_spaces = [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_end_grps[1], ctrl=self.ik_end_ctrl, type = 'parent', default_index= self.default_ik_end)
 		bb.create_constrain([self.ik_end_ctrl], ikh, 'point')
@@ -274,12 +293,14 @@ class IkRig:
 		point_names = ['upper', 'lower', 'end']
 		feature_lock = 'lock'
 
+		loc_lock_grp = bb.create_node('group', self.rig_name, [feature_lock], None, self.side, p=self.mod_grp)
+		cmds.setAttr(f'{loc_lock_grp}.v', 0)
 		cmds.addAttr( self.ik_pv_ctrl, ln = feature_lock, at ='float' , min = 0, max = 1, dv = 0, k = True )
 		point_locs = []
 		distance_nodes = []
 		for i, point in enumerate (point_names):
 			point_loc = bb.create_node('locator', self.rig_name, [point, feature_lock], self.number, self.side)
-			cmds.parent(point_loc, self.mod_grp)
+			cmds.parent(point_loc, loc_lock_grp)
 			#bb.create_constrain([self.ctrls[i]], point_loc, type='pac', maintain_offset=False)
 			point_locs.append(point_loc)
 			bb.snap([self.joints[i]], point_loc)

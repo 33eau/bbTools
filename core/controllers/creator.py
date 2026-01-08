@@ -67,6 +67,7 @@ class Controller:
 					shape_rotation = None, 
 					temp = False,
 					fk_chain = False ,
+					upper_driver=None,
 					run = True,
 					log = False,
 					**kwargs 
@@ -87,6 +88,7 @@ class Controller:
 		self.shape_rotation = shape_rotation or [0, 0, 0]
 		self.temp = temp
 		self.fk_chain = fk_chain
+		self.upper_driver =  upper_driver
 
 		self.lock_attrs = lock_attrs + ['v'] if lock_attrs else ['v']
 
@@ -143,6 +145,9 @@ class Controller:
 			
 			if self.temp:
 				cmds.delete(targets)
+
+			if self.upper_driver:
+				self.create_connection(top_grp, self.upper_driver)
 		finally:
 			cmds.undoInfo(closeChunk=True)
 		return self.ctrls
@@ -289,7 +294,7 @@ class SuperRoot:
 		return ctrl
 	
 class SingleControl:
-	def __init__(self, target_obj=None, bind_parent='', ctrl_parent='', global_scale = '', upper_driver = '', delete_temp = False, color = '', add_element = None,  **kwargs):
+	def __init__(self, target_obj=None, bind_parent=None, ctrl_parent=None, global_scale = None, upper_driver = None, delete_temp = False, color = None, add_element = None,  **kwargs):
 		self.target_obj =  target_obj
 		self.bind_parent = bind_parent
 		self.ctrl_parent =  ctrl_parent

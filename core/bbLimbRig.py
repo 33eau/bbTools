@@ -120,7 +120,6 @@ class LimbRig:
 		self.setting_ctrl = None
 
 		self._build()
-		print(self.bind_jnts)
 		bb.over_and_out('LimbRig', f'{self.side}{self.rig_name}')
 	
 	def _build(self):
@@ -258,3 +257,7 @@ class LimbRig:
 		
 		self.setting_ctrl = setting_ctrl
 		self.bind_jnts = bind_jnts
+
+	def _hand(self, hand_jnt):
+		hand_ikh
+		

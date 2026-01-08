@@ -125,8 +125,6 @@ class SpineRig:
 		for i, jnt in enumerate(rig_jnts):
 			bb.create_constrain([jnt], self.bind_jnts[i])
 			cmds.setAttr( f'{self.bind_jnts[i]}.radius', self.scale)
-		cmds.delete(self.joints)
-		cmds.hide(self.bind_jnts)
 		
 		cv_count = bb.get_cv_count(ik_crv)
 		cv_joints = []
