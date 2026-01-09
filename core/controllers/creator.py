@@ -65,6 +65,7 @@ class Controller:
 					rotate_order = 'xyz',
 					lock_attrs = None,
 					shape_rotation = None, 
+					move = None,
 					temp = False,
 					fk_chain = False ,
 					upper_driver=None,
@@ -86,6 +87,7 @@ class Controller:
 		self.connection_type = connection_type
 		self.rotate_order = rotate_order
 		self.shape_rotation = shape_rotation or [0, 0, 0]
+		self.move = move or [0, 0, 0]
 		self.temp = temp
 		self.fk_chain = fk_chain
 		self.upper_driver =  upper_driver
@@ -118,7 +120,8 @@ class Controller:
 								line_width=self.line_width, 
 								scale=self.scale, 
 								shape_rotation=self.shape_rotation, 
-								rotate_order=self.rotate_order
+								rotate_order=self.rotate_order,
+								move = self.move
 								)
 				self.ctrls.append(ctrl)
 
@@ -167,9 +170,10 @@ class Controller:
 					color='red', 
 					line_width=1.0, 
 					scale=1.0, 
-					shape_rotation=None, 
-					rotate_order='zyx'):
-		
+					shape_rotation=[0, 0, 0], 
+					rotate_order='zyx',
+					move = [0, 0, 0]):
+
 		points = shape_library.SHAPES.get(shape, shape_library.SHAPES['crossCircle'])
 		crv = cmds.curve(p=points, d=1)
 		crv = cmds.rename(crv, ctrl_name)
@@ -177,6 +181,7 @@ class Controller:
 
 		bb.set_color([crv], color)
 		bb.scale_shape(crv, scale)
+		bb.move_shape(crv, move)
 		bb.rotate_curve(crv, rotation=shape_rotation)
 		cmds.setAttr( f'{shp}.lineWidth', line_width)
 
