@@ -124,7 +124,7 @@ class SpineRig:
 		self.bind_jnts = joints[element_names[1]]
 		for i, jnt in enumerate(rig_jnts):
 			bb.create_constrain([jnt], self.bind_jnts[i])
-			cmds.setAttr( f'{self.bind_jnts[i]}.radius', self.scale)
+			#cmds.setAttr( f'{self.bind_jnts[i]}.radius', self.scale)
 		
 		cv_count = bb.get_cv_count(ik_crv)
 		cv_joints = []
@@ -132,7 +132,7 @@ class SpineRig:
 			for cv in range(0, cv_count+1):
 				cmds.select(cl=True)
 				position = cmds.xform(f'{ik_crv}.cv[{cv}]', ws=True, q = True, t=True)
-				cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{cv+1:02d}', side=self.side, p=position, rad=2)
+				cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{cv+1:02d}', side=self.side, p=position)
 				cmds.makeIdentity(cv_jnt, a=True, r=True)
 				cv_joints.append(cv_jnt)
 		else:
@@ -142,7 +142,7 @@ class SpineRig:
 			for i in range(0, 3):
 				cmds.setAttr( f'{tmp_point_poc}.parameter', pos_parameters[i])
 				position = cmds.getAttr(f'{tmp_point_poc}.position')[0]
-				cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{i+1:02d}', side=self.side, p=position, rad=2)
+				cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{i+1:02d}', side=self.side, p=position)
 				cv_joints.append(cv_jnt)
 
 		base_jnt = cv_joints[0]
