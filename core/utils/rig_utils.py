@@ -57,9 +57,18 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 	elif node_type == 'joint':
 		cmds.select(cl=True)
 		named_node = cmds.joint(n=node_name, **clean_kwargs)
+	elif node_type == 'ikRp':
+		ikh, eff = cmds.ikHandle(n = node_name, sol='ikRPsolver', **clean_kwargs)
+		eff_name = NAMER.format(base, elements, number, side, 'eff')
+		eff = cmds.rename(eff, eff_name)
+		named_node = [ikh, eff]
+	elif node_type == 'ikSc':
+		ikh, eff = cmds.ikHandle(n = node_name, sol='ikSCsolver', **clean_kwargs)
+		eff_name = NAMER.format(base, elements, number, side, 'eff')
+		eff = cmds.rename(eff, eff_name)
+		named_node = [ikh, eff]
 	else:
 		named_node = cmds.createNode(node_type, n=node_name, **clean_kwargs)
-	#print(f'created {node_name}')
 	return named_node
 
 # def get_side(object, krt=False):
@@ -525,18 +534,38 @@ def scale_shape(object, scale=1.0):
 	shape = cmds.listRelatives(object, s=True, f=True)[0]
 	node_type = cmds.nodeType(shape)
 	try:
+		scale_value = scale if isinstance(scale, list) else [scale, scale, scale]
+
 		if node_type == 'mesh':
 			vtx_count = cmds.polyEvaluate(shape, v=True)
-			cmds.scale(scale, scale, scale, f'{shape}.vtx[0:{vtx_count-1}]')
+			cmds.scale(scale_value[0], scale_value[1], scale_value[2], f'{shape}.vtx[0:{vtx_count-1}]', r=True)
 		
 		elif node_type in ['nurbsCurve', 'nurbsSurface']:
 			spans = cmds.getAttr(f'{shape}.spans')
-			cmds.scale(scale, scale, scale, f'{shape}.cv[0:{spans}]')
+			cmds.scale(scale_value[0], scale_value[1], scale_value[2], f'{shape}.cv[0:{spans}]', r=True)
 		
 		else:
 			cmds.warning(f'Unsupported node type "{node_type}" on {shape}. Skipping.')
 	except Exception as e:
 		cmds.warning(f'Failed to scale {object}: {e}')
+	cmds.select(cl=True)
+
+def move_shape(object, value=[]):
+	shape = cmds.listRelatives(object, s=True, f=True)[0]
+	node_type = cmds.nodeType(shape)
+	try:
+		if node_type == 'mesh':
+			vtx_count = cmds.polyEvaluate(shape, v=True)
+			cmds.move(value[0], value[1], value[2], f'{shape}.vtx[0:{vtx_count-1}]', r=True)
+		
+		elif node_type in ['nurbsCurve', 'nurbsSurface']:
+			spans = cmds.getAttr(f'{shape}.spans')
+			cmds.move(value[0], value[1], value[2], f'{shape}.cv[0:{spans}]', r=True)
+		
+		else:
+			cmds.warning(f'Unsupported node type "{node_type}" on {shape}. Skipping.')
+	except Exception as e:
+		cmds.warning(f'Failed to move {object}: {e}')
 	
 	cmds.select(cl=True)
 
@@ -704,13 +733,13 @@ def fk_ik_switch(
 			cmds.connectAttr(f'{parents_fk[i]}.{feat[0]}', f'{switch}.c2')
 			cmds.connectAttr(f'{switch}.op', f'{target}.{feat[0]}')
 
-	side = parser.find_element(ctrl, 'sides')
-	rev_name = NAMER.format(setup_name, [attr_name], '', side, 'rev')
-	cmds.connectAttr(f'{ctrl}.{attr_name}', f'{ik_ctrl_grp}.v')
-
-	rev = cmds.createNode('reverse', n = rev_name)
-	cmds.connectAttr(f'{ctrl}.{attr_name}', f'{rev}.ix')
-	cmds.connectAttr(f'{rev}.ox', f'{fk_ctrl_grp}.v')
+	if ik_ctrl_grp:
+		side = parser.find_element(ctrl, 'sides')
+		rev_name = NAMER.format(setup_name, [attr_name], '', side, 'rev')
+		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{ik_ctrl_grp}.v')
+		rev = cmds.createNode('reverse', n = rev_name)
+		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{rev}.ix')
+		cmds.connectAttr(f'{rev}.ox', f'{fk_ctrl_grp}.v')
 
 def create_guide_curve(ctrl = '', target = '', parent = '', curve_elem = 'guide'): #25Dec01
 	if not parent:
@@ -745,12 +774,15 @@ def create_guide_curve(ctrl = '', target = '', parent = '', curve_elem = 'guide'
 
 	return guide_crv
 
-def set_driven_key(main_ctrl='', attr = '', driven = '', values = {0:0,	180:-50,-180:50}):
+def set_driven_key(main_ctrl='', attr = '', driven = '', values = {0:0, 180:-50,-180:50}, limit = True):
 	
 	if not cmds.attributeQuery(attr, node=main_ctrl, exists=True):
-		min_val = min(values.keys())
-		max_val = max(values.keys())
-		cmds.addAttr( main_ctrl, ln = attr, at = 'float', min = min_val, max = max_val, dv = 0, k = True )
+		if limit:
+			min_val = min(values.keys())
+			max_val = max(values.keys())
+			cmds.addAttr( main_ctrl, ln = attr, at = 'float', min = min_val, max = max_val, dv = 0, k = True )
+		else:
+			cmds.addAttr( main_ctrl, ln = attr, at = 'float', dv = 0, k = True )
 
 	driver = f'{main_ctrl}.{attr}'
 	len_keys = len(values.keys())
@@ -771,6 +803,7 @@ def set_driven_key(main_ctrl='', attr = '', driven = '', values = {0:0,	180:-50,
 		cmds.setAttr( f'{key}.preInfinity', 1)
 		cmds.setAttr( f'{key}.postInfinity', 1)
 		i+=1
+	return key
 
 def pole_vector_position(joints, offset = 1, create_output='joint', name = None):
 	base_position = cmds.xform( joints[0], q = True, t = True, ws = True ) 
@@ -803,8 +836,10 @@ def pole_vector_position(joints, offset = 1, create_output='joint', name = None)
 	return [pv_posi_vector[0], pv_posi_vector[1], pv_posi_vector[2]]
 
 def attr_separator(ctrl, ln='extra', enum_name = '—————'):
+	ln = '_____' + ln
 	cmds.addAttr( ctrl, ln = ln, at = 'enum', en = enum_name , k = True )
 	cmds.setAttr( f'{ctrl}.{ln}', l=True )
+	#cmds.setAttr( f'{ctrl}.{ln}', k=False )
 
 def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 							world_space = 'r_global_gimbal_space_grp',
