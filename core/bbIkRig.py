@@ -19,8 +19,8 @@ NAMER = naming.get_namer(NAME_TEMPLATE)
 class IkRig:
 	def __init__(self,
 				joints = None,
-				end_rotation_jnts = [],
 				pole_vector_jnt = None,
+				end_rotation_jnts = [],
 				rig_name = 'leg',
 				side = None,
 				element_name = 'ik',
@@ -101,13 +101,15 @@ class IkRig:
 		
 		self.ctrl_grp = bb.create_node('group', base=self.rig_name, elements=[self.element_name, 'ctrl'], side=self.side, p=self.ctrl_parent)
 		self.mod_grp = bb.create_node('group', base=self.rig_name, elements=[self.element_name, 'mod'], side=self.side, p=self.mod_parent)
+		self.pivot_mod_grp = bb.create_node('group', base=self.rig_name, elements=[self.element_name, 'pivot', 'mod'], side=self.side, p=self.mod_grp)
+		cmds.matchTransform(self.pivot_mod_grp, self.joints[-1])
 
-		node_name = NAMER.format(self.rig_name, ['ik'], self.number, self.side, 'ikh')
+		node_name = NAMER.format(self.rig_name, [self.element_name], self.number, self.side, 'ikh')
 		ikh, eff = cmds.ikHandle(sj=self.joints[0], ee=self.joints[-1], n = node_name, sol='ikRPsolver' )
 
-		node_name = NAMER.format(self.rig_name, ['ik'], self.number, self.side, 'eff')
+		node_name = NAMER.format(self.rig_name, [self.element_name], self.number, self.side, 'eff')
 		cmds.rename(eff, node_name)
-		cmds.parent(ikh, self.mod_grp)
+		cmds.parent(ikh, self.pivot_mod_grp)
 
 		ik_base_controller = bc.Controller(objects = [self.joints[0]],
 					side = self.side,
@@ -166,8 +168,25 @@ class IkRig:
 		# ————————————————————————————————————————————————————
 
 		bb.add_enum_space_switch(parent_spaces = [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_end_grps[1], ctrl=self.ik_end_ctrl, type = 'parent', default_index= self.default_ik_end)
-		bb.create_constrain([self.ik_end_ctrl], ikh, 'point')
+		#bb.create_constrain([self.ik_end_ctrl], ikh, 'point')
 		node_name = NAMER.format(self.rig_name, ['pv'], self.number, self.side, 'loc')
+
+		# ————————————————————————————————————————————————————
+		##################### End Rotation #####################
+		if self.end_rotation_jnts:
+			end_rot_ikhs = []
+			cmds.parent(self.end_rotation_jnts[1:], self.joints[-1])
+			for i in range(0, len(self.end_rotation_jnts[:1])):
+				base_jnt = self.joints[-1]
+				end_jnt = self.end_rotation_jnts[i+1]
+				base, element, number, side, suffix = NAMER.extract(end_jnt)
+				end_rot_ikh, eff = bb.create_node('ikRp', base, [self.element_name], self.number, self.side, sj=base_jnt, ee=end_jnt)
+				if len(end_rot_ikhs) > 0:
+					cmds.parent(end_rot_ikh, end_rot_ikhs[-1])
+				else:
+					bb.create_constrain([self.ik_end_ctrl], end_rot_ikh, 'parent')
+					cmds.parent(end_rot_ikh, self.mod_grp)
+		# ————————————————————————————————————————————————————
 
 		ik_pv_controller = bc.Controller(objects = [self.pole_vector_jnt],
 								offset_names = ['zro', 'space', 'Offset'],
@@ -200,13 +219,16 @@ class IkRig:
 		for i, point in enumerate(['start', 'end']):
 			loc = bb.create_node( node_type='locator', base=self.rig_name, elements=[self.stretch_attr, point], number=self.number, side=self.side, namer=NAMER)
 			cmds.matchTransform(loc, ctrls[i])
-			bb.create_constrain( parents=[ctrls[i]], target=loc, type="parent")
-			cmds.parent(loc, self.mod_grp)
 			cmds.hide(loc)
 			position_locators.append(loc)
+
 		base_loc = position_locators[0]
 		end_loc = position_locators[1]
-		
+		cmds.parent(base_loc, self.mod_grp)
+		cmds.parent(end_loc, self.pivot_mod_grp)
+		bb.create_constrain( parents=[self.ik_base_ctrl], target=base_loc, type="parent")
+		bb.create_constrain( parents=[self.ik_end_ctrl], target=self.pivot_mod_grp, type="parent")
+				
 		real_time_distant_dbt = bb.create_node( node_type='distanceBetween', base=self.rig_name, elements=[self.stretch_attr], number=self.number, side=self.side, namer=NAMER)
 		cmds.connectAttr(f'{base_loc}.worldPosition[0]',  f'{real_time_distant_dbt}.p1')
 		cmds.connectAttr(f'{end_loc}.worldPosition[0]',  f'{real_time_distant_dbt}.p2')
