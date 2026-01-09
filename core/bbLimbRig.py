@@ -29,11 +29,16 @@ IK_END_CTRL_SHAPE = 'cube'
 SETTING_CTRL_SHAPE = 'hexagon3d'
 RIBBON_CTRL_SHAPE = 'squareRound'
 NUM_NURB_SUBDIVISION = 8
+BIND_ELEM = 'bnd'
+
+FOOT_FK_CTRL_SHAPE = 'ballFoot'
+FOOT_IK_CTRL_SHAPE = 'ballFoot'
 
 class LimbRig:
 	def __init__(self,
 				joints = None,
 				pole_vector_jnt = None, 
+				end_rotation_jnts = None,
 				setting_jnt = None,
 				rig_name = None,
 				parts_name = [],
@@ -64,6 +69,7 @@ class LimbRig:
 		
 		self.joints =  joints
 		self.pole_vector_jnt =  pole_vector_jnt
+		self.end_rotation_jnts =  end_rotation_jnts
 		self.setting_jnt =  setting_jnt
 		self.rig_name =  rig_name
 		self.aim_axis =  aim_axis
@@ -118,10 +124,13 @@ class LimbRig:
 		self.bind_jnts = None
 		self.ctrl_dict = {}
 		self.setting_ctrl = None
+		self.rig_jnts = None
+		self.ik_jnts =  None
+		self.fk_ctrls = None
 
 		self._build()
 		bb.over_and_out('LimbRig', f'{self.side}{self.rig_name}')
-	
+
 	def _build(self):
 		base, element, number, _, _ = NAMER.extract(self.rig_name)
 		element = element if element else []
@@ -130,17 +139,32 @@ class LimbRig:
 		jnt_grp = bb.create_node('group', base, element + ['Jnt'], number, self.side, p=self.mod_grp)
 		bb.create_constrain([self.upper_driver], self.ctrl_grp)
 
-		generated_joints = bb.duplicate_joint_chain(self.joints, add_elements=['fk', 'ik', 'rig', 'bnd'], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_jnt])
+		generated_joints = bb.duplicate_joint_chain(self.joints, add_elements=['fk', 'ik', 'rig', BIND_ELEM], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_jnt])
 		fk_jnts = generated_joints['fk']
 		ik_jnts = generated_joints['ik']
 		rig_jnts = generated_joints['rig']
-		bind_jnts = generated_joints['bnd']
+		bind_jnts = generated_joints[BIND_ELEM]
 
 		cmds.parent(fk_jnts[0], ik_jnts[0], rig_jnts[0], jnt_grp)
 		cmds.parent(bind_jnts[0], self.bind_parent)
 
+		# ————————————————————————————————————————————————————
+		##################### End Rotation #####################
+		if self.end_rotation_jnts:
+			end_generated_joints = bb.duplicate_joint_chain(self.end_rotation_jnts[1:], add_elements=['fk', 'ik', BIND_ELEM], remove_element='tmp')
+			end_rotation_jnts = [rig_jnts[-1]] + end_generated_joints['ik']
+			end_fk_jnts = end_generated_joints['fk']
+			end_ik_jnts = end_generated_joints['ik']
+			end_bnd_jnts = end_generated_joints[BIND_ELEM]
+			cmds.parent(end_bnd_jnts, bind_jnts[-1])
+			cmds.parent(end_fk_jnts, fk_jnts[-1])
+		else:
+			end_rotation_jnts = None
+		# ————————————————————————————————————————————————————
+
 		ik_rig = ik.IkRig( joints = ik_jnts,
 						pole_vector_jnt = self.pole_vector_jnt,
+						end_rotation_jnts = end_rotation_jnts,
 						rig_name = self.rig_name,
 						side = self.side,
 						element_name = 'ik',
@@ -165,6 +189,8 @@ class LimbRig:
 						default_ik_end = self.default_ik_end,
 						)
 		ik_grps = ik_rig.mod_grp
+		self.pivot_mod_grp = ik_rig.pivot_mod_grp
+		self.ik_end_ctrl = ik_rig.ik_end_ctrl
 
 		fk_rig = fk.FKRig( 
 						joints=fk_jnts,
@@ -234,6 +260,22 @@ class LimbRig:
 
 		for rig_jnt, bind_jnt in zip(rig_jnts, bind_jnts):
 			bb.create_constrain([rig_jnt], bind_jnt, 'parentScale')
+		
+		if self.end_rotation_jnts:
+			bb.fk_ik_switch(
+						parents_fk = end_fk_jnts,
+						parents_ik = end_ik_jnts,
+						targets = end_bnd_jnts,
+						attr_name = 'fkIk',
+						features = ['translation', 'rotation', 'scale'],
+						ctrl = setting_ctrl,
+						ik_ctrl_grp = None,
+						fk_ctrl_grp = None,
+						setup_name = self.rig_name,
+						default_value = self.default_fkIk
+						)
+
+			bind_jnts = bind_jnts + end_bnd_jnts
 
 		# Ribbon Rig
 		if self.ribbon:
@@ -257,7 +299,223 @@ class LimbRig:
 		
 		self.setting_ctrl = setting_ctrl
 		self.bind_jnts = bind_jnts
+		self.rig_jnts = rig_jnts
+		self.ik_jnts =  ik_jnts
+		self.fk_ctrls = fk_ctrls
 
-	def _hand(self, hand_jnt):
-		hand_ikh
+	def foot_rig(self, foot_joints = ['l_ball_tmp_jnt', 'l_toe_tmp_jnt'], 
+						ball_pv_jnt = 'l_ball_pv_jnt', 
+						toe_pv_jnt = 'l_ankle_pv_jnt', 
+						foot_name = 'foot', 
+						aim_axis = 'z',
+						up_axis = 'x',
+						rotate_order = 'zyx',
+						ball_orient_loc = 'l_ball_orientation_loc',
+						upper_jnt = None,
+						foot_pivots = [ 'l_foot_heel_loc', 'l_foot_toe_loc', 'l_foot_out_loc', 'l_foot_in_loc'],
+						color = 'sky',
+						subcolor = 'lightBlue'):
 		
+		upper_jnt = upper_jnt or self.rig_jnts[-1]
+
+		foot_ctrl_grp = bb.create_node('group', foot_name, ['ctrl'], None, self.side, p = self.ctrl_parent)
+		foot_mod_grp = bb.create_node('group', foot_name, ['mod'], None, self.side, p = self.mod_parent)
+
+		generated_joints = bb.duplicate_joint_chain(foot_joints, add_elements=['fk', 'ik', 'rig', BIND_ELEM], remove_element='tmp', ignore_jnts=[ball_pv_jnt, toe_pv_jnt])
+		foot_fk_jnts = generated_joints['fk']
+		foot_ik_jnts = generated_joints['ik']
+		foot_rig_jnts = generated_joints['rig']
+		foot_bind_jnts = generated_joints[BIND_ELEM]
+
+		base, element, number, side, suffix = NAMER.extract(upper_jnt)
+		upper_base_name = parser.get_base_name(upper_jnt, first_name=True)
+		for elem in ['fk', 'ik', 'rig', BIND_ELEM]:
+			child = generated_joints[elem][0]
+			parent = NAMER.format(upper_base_name, [elem], number, side, suffix)
+			cmds.parent(child, parent)
+
+		# ————————————————————————————————————————————————————
+		##################### Fk Rig #####################
+		fk_rig = fk.FKRig( 
+				joints=foot_fk_jnts,
+				rig_name = foot_name,
+				element_name = 'fk',
+				side = self.side,
+				stretch = True,
+				squash = False,
+				aim_axis = aim_axis,
+				up_axis = up_axis,
+				shape = FOOT_FK_CTRL_SHAPE,
+				color = self.color,
+				connection_type = 'None',
+				ctrl_parent = self.fk_ctrls[-1],
+				scale = self.scale * 1.2,
+				rotate_order = rotate_order,
+				rig_end_joint=False,
+				base_orient_loc = ball_orient_loc
+				)
+		fk_ctrl = fk_rig.ctrls[0]
+		fk_grps = fk_rig.grps[0]
+		fk_end_grp = fk_rig.end_grp
+
+		bb.create_constrain([fk_ctrl], foot_joints[0], 'parent')
+		bb.create_constrain([fk_end_grp], foot_joints[1], 'parent')
+
+		# ————————————————————————————————————————————————————
+		##################### Ik Rig #####################
+
+		base, element, number, side, suffix = NAMER.extract(foot_ik_jnts[0])
+		ball_ikh, ball_eff = bb.create_node('ikSc', base, ['ik'], number, side, sj= self.ik_jnts[-1], ee=foot_ik_jnts[0])
+
+		base, element, number, side, suffix = NAMER.extract(foot_ik_jnts[1])
+		toe_ikh, toe_eff = bb.create_node('ikSc', base, ['ik'], number, side, sj=foot_ik_jnts[0], ee=foot_ik_jnts[1])
+		foot_ikh = [ball_ikh, toe_ikh]
+
+		pivot_controllers = bc.Controller(objects = foot_pivots,
+					offset_names = ['Offset'],
+					main_ctrl_grp =  self.ik_end_ctrl,
+					shape = 'sphere',
+					color = subcolor,
+					scale= self.scale * 0.4,
+					connection_type = 'None',
+					rotate_order = 'xyz',
+					shape_rotation = [0, 0, 0],
+					fk_chain = True
+					)
+		pivot_ctrls = pivot_controllers.ctrls
+
+		ball_ik = bc.Controller(objects = [ball_orient_loc],
+								offset_names = ['zro', 'Offset'],
+								main_ctrl_grp =  pivot_ctrls[-1],
+								name = 'ball',
+								side = self.side,
+								shape = 'cube',
+								color =  color,
+								connection_type = 'None',
+								rotate_order = 'xyz',
+								shape_rotation = [0, 0, 0],
+								scale= [1.2, 1.2, 0.35],
+								)
+		ball_ik_ctrl = ball_ik.ctrls[0]
+
+		aim_vector = bb.axis_convert(aim_axis, 'vector')
+		move_value = [ val * 4 for val in aim_vector]
+		toe_ik = bc.Controller(objects = [ball_orient_loc],
+								offset_names = ['zro', 'Offset'],
+								main_ctrl_grp =  pivot_ctrls[-1],
+								name = 'toe',
+								side = self.side,
+								shape = 'cube',
+								color =  color,
+								connection_type = 'None',
+								rotate_order = 'xyz',
+								shape_rotation = [0, 0, 0],
+								scale= [1.2, 1, 0.35],
+								move = move_value
+								)
+		toe_ik_ctrl = toe_ik.ctrls[0]
+
+		cmds.parent(toe_ikh, foot_mod_grp)
+		cmds.parent(ball_ikh, self.pivot_mod_grp)
+
+		piv_grp = bb.create_node('group', foot_name, ['piv'], None, side)
+		bb.snap([pivot_ctrls[0]], piv_grp)
+		cmds.parent(piv_grp, ball_ik_ctrl)
+
+		cmds.delete(self.pivot_mod_grp, constraints=True)
+		bb.create_constrain([toe_ik_ctrl], toe_ikh)
+		bb.create_constrain([piv_grp], self.pivot_mod_grp)
+		# ————————————————————————————————————————————————————
+		##################### Foot SDKs #####################
+
+		# Axis conversion for rotations
+		ab_aim_axis = bb.axis_convert(aim_axis, 'absolute_letter')
+		ab_up_axis = bb.axis_convert(up_axis, 'absolute_letter')
+		cross_axis = bb.axis_convert(aim_axis, 'cross_letter', up_axis)
+		ab_cross_axis = bb.axis_convert(cross_axis, 'absolute_letter')
+
+		# Foot Poses setup configurations
+		# Format: {pose_name: {'ctrls': list, 'driven_attr': string, 'keys': list, 'multipliers': dict}}
+		foot_sdk_configs = {
+			'footRoll': {
+				'ctrls': [ball_ik_ctrl, pivot_ctrls[1], pivot_ctrls[0]], # ball, toe pivot, heel pivot
+				'driven_attr': f'r{ab_up_axis}',
+				'keys': [
+					{-90: 0, 0: 0, 45: 1, 90: 0},   # Ball
+					{-90: 0, 0: 0, 45: 0, 90: 1},   # Toe
+					{-90: -90, 0: 0, 45: 0, 90: 0} # Heel
+				],
+				'limit': True,
+				'multipliers': {
+					'attrs': ['footRoll_bend', 'footRoll_straight'],
+					'values': [45, 90]
+				}
+			},
+			'toeTwist': {
+				'ctrls': [pivot_ctrls[1]],
+				'driven_attr': f'r{ab_cross_axis}',
+				'keys': [{-50: -50, 0: 0, 50: 50}]
+			},
+			'heelTwist': {
+				'ctrls': [pivot_ctrls[0]],
+				'driven_attr': f'r{ab_cross_axis}',
+				'keys': [{-50: -50, 0: 0, 50: 50}]
+			},
+			'footBank': {
+				'ctrls': [pivot_ctrls[3], pivot_ctrls[2]], # in, out
+				'driven_attr': f'r{ab_aim_axis}',
+				'keys': [{-50: 50, 0: 0, 50: 0}, {-50: 0, 0: 0, 50: -50}]
+			}
+		}
+
+		bb.attr_separator(self.ik_end_ctrl, 'footPose')
+
+		for pose, config in foot_sdk_configs.items():
+			ctrl_list = config['ctrls']
+			driven_attr = config['driven_attr']
+			multipliers = config.get('multipliers')
+			limit_override = config.get('limit')
+			
+			for i, ctrl in enumerate(ctrl_list):
+				key_values = config['keys'][i]
+				limit = limit_override if limit_override is not None else (False if len(ctrl_list) > 1 else True)
+				
+				# Create SDK offset group
+				driven_grp = bb.create_offset_group(ctrl, [pose])
+				driven_node = driven_grp[ctrl][0]
+				driven_full_attr = f'{driven_node}.{driven_attr}'
+
+				# Handle SDK setup (with optional multiplier nodes for footRoll)
+				if multipliers and i < len(multipliers['attrs']):
+					mul_attr = multipliers['attrs'][i]
+					mul_val = multipliers['values'][i]
+					
+					# Create and connect multiplier node
+					base_name = parser.get_base_name(ctrl)
+					mdl_node = bb.create_node('multDoubleLinear', base_name, [pose], None, self.side)
+					bb.set_driven_key(main_ctrl=self.ik_end_ctrl, attr=pose, driven=f'{mdl_node}.i2', values=key_values, limit=limit)
+					
+					if not cmds.attributeQuery(mul_attr, node=self.ik_end_ctrl, exists=True):
+						cmds.addAttr(self.ik_end_ctrl, ln=mul_attr, at='float', dv=mul_val, k=True)
+					
+					cmds.connectAttr(f'{self.ik_end_ctrl}.{mul_attr}', f'{mdl_node}.i1')
+					cmds.connectAttr(f'{mdl_node}.o', driven_full_attr)
+				else:
+					# Standard Set Driven Key
+					bb.set_driven_key(main_ctrl=self.ik_end_ctrl, attr=pose, driven=driven_full_attr, values=key_values, limit=limit)
+
+		for rig_jnt, bnd_jnt in zip(foot_rig_jnts, foot_bind_jnts):
+			bb.create_constrain([rig_jnt], bnd_jnt)
+
+		bb.fk_ik_switch(
+			parents_fk = foot_fk_jnts,
+			parents_ik = foot_ik_jnts,
+			targets = foot_rig_jnts,
+			attr_name = 'fkIk',
+			features = ['translation', 'rotation', 'scale'],
+			ctrl = self.setting_ctrl,
+			ik_ctrl_grp = None,
+			fk_ctrl_grp = None,
+			setup_name = None,
+			default_value = None
+			)
