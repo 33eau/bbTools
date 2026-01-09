@@ -53,6 +53,8 @@ TYPE_SUFFIX={
 'group'         		: 'grp',
 'locator'      			: 'loc',
 'ikHandle'				: 'ikh',
+'ikRp'					: 'ikh',
+'ikSc'					: 'ikh',
 'ikEffector'			: 'eff',
 
 'absolute'				: 'abs',
