@@ -105,6 +105,7 @@ class FingerRig:
 				default_ik_pv = 1,
 				default_ik_end = 1,
 				finger_pose = False,
+				pose_ctrl = None,
 				log=False,
 				**controller_kwargs
 				):
@@ -137,6 +138,7 @@ class FingerRig:
 		self.default_ik_pv =  default_ik_pv
 		self.default_ik_end =  default_ik_end
 		self.finger_pose =  finger_pose
+		self.pose_ctrl =  pose_ctrl
 		self.controller_kwargs =  controller_kwargs
 
 		if self.finger_names is None:
@@ -170,6 +172,76 @@ class FingerRig:
 		if log:
 			bb.over_and_out('FingerRig', f'{self.side}{self.rig_name}')
 
+	def _setup_finger_poses(self, pose_ctrl, filter_name=None):
+		if not self.finger_pose:
+			return
+
+		path = io.define_path(POSE_FOLDER)
+		pose_dict = io.import_data(POSE_FILE, folder_name = POSE_FOLDER, path = path)
+
+		for pose in pose_dict:
+			if not cmds.attributeQuery(pose, node=pose_ctrl, exists=True):
+				cmds.addAttr(pose_ctrl, ln=pose, at='double', min=-10, max=10, dv=0, k=True)
+
+			for ctrl in pose_dict[pose]:
+				# If filter_name is provided, skip controls that don't belong to this finger
+				if filter_name and filter_name not in ctrl:
+					continue
+				
+				# Create SDK offset group
+				sdk_grp_dict = bb.create_offset_group(ctrl, [f'{pose}_sdk'])
+				sdk_grp = sdk_grp_dict[ctrl][0]
+				bb.set_color(objects=[sdk_grp], color='lightPink', viewport=False, outliner=True)
+				
+				# Setup driven keys for each attribute in the pose data
+				for attr_data in pose_dict[pose][ctrl]:
+					sdk_attr = attr_data[0][0]
+					sdk_val = attr_data[1][0]
+					
+					driven = f'{sdk_grp}.{sdk_attr}'
+					# Set driven keys: 0 is default, 10 is full pose, -5 is reverse half
+					bb.set_driven_key(
+						main_ctrl=pose_ctrl, 
+						attr=pose, 
+						driven=driven, 
+						values={0: 0, 10: sdk_val, -5: sdk_val * (-0.5)}
+					)
+					# Reset to default
+					cmds.setAttr(driven, 0)
+
+	def _setup_finger_poses(self, pose_ctrl, filter_name=None):
+		if not self.finger_pose:
+			return
+		path = io.define_path(POSE_FOLDER)
+		pose_dict = io.import_data(POSE_FILE, folder_name = POSE_FOLDER, path = path)
+		for pose in pose_dict:
+			if not cmds.attributeQuery(pose, node=pose_ctrl, exists=True):
+				cmds.addAttr(pose_ctrl, ln=pose, at='float', min=-10, max=10, dv=0, k=True)
+
+			for ctrl in pose_dict[pose]:
+				if filter_name and filter_name not in ctrl:
+					continue
+				# Create SDK offset group
+				sdk_grp_dict = bb.create_offset_group(ctrl, [f'{pose}_sdk'])
+				sdk_grp = sdk_grp_dict[ctrl][0]
+				bb.set_color(objects=[sdk_grp], color='lightPink', viewport=False, outliner=True)
+				
+				# Setup driven keys for each attribute in the pose data
+				for attr_data in pose_dict[pose][ctrl]:
+					sdk_attr = attr_data[0][0]
+					sdk_val = attr_data[1][0]
+					
+					driven = f'{sdk_grp}.{sdk_attr}'
+					# Set driven keys: 0 is default, 10 is full pose, -5 is reverse half
+					bb.set_driven_key(
+						main_ctrl=pose_ctrl, 
+						attr=pose, 
+						driven=driven, 
+						values={0: 0, 10: sdk_val, -5: sdk_val * (-0.5)}
+					)
+					# Reset to default
+					cmds.setAttr(driven, 0)
+
 	def _build(self):
 		if self.feature == 'fk':
 			for i, finger in enumerate(self.joint_list):
@@ -194,7 +266,7 @@ class FingerRig:
 						upper_driver = self.upper_driver
 						)
 				self.ctrl_dict[self.finger_names[i]] = finger_fk.ctrls
-
+				self._setup_finger_poses(finger_fk.ctrls[0], filter_name=self.finger_names[i])
 		# IF NOT FK
 		else:
 			self.ctrl_grp = bb.create_node('group', self.rig_name, ['ctrl'], None, self.side)
@@ -203,18 +275,6 @@ class FingerRig:
 				cmds.parent(self.ctrl_grp, self.ctrl_parent)
 			if self.mod_parent:
 				cmds.parent(self.mod_grp, self.mod_parent)
-
-			if self.end_orient_loc == 'end_joint':
-				for i, finger in enumerate(self.joint_list):
-					end_loc = bb.create_node('locator', self.finger_names[i], ['end', 'orient'], None, self.side)
-					bb.snap([finger[-1]], end_loc)
-					self.end_loc_list.append(end_loc)
-
-			if self.base_orient_loc == 'base_joint':
-				for i, finger in enumerate(self.joint_list):
-					base_loc = bb.create_node('locator', self.finger_names[i], ['base', 'orient'], None, self.side)
-					bb.snap([finger[1]], base_loc)
-					self.base_loc_list.append(base_loc)
 
 			if self.feature == 'ik':
 				for i, finger in enumerate(self.joint_list):	
@@ -231,7 +291,7 @@ class FingerRig:
 												shape_rotation = [90, 90, 0],
 												global_scale = self.global_scale,
 												create_joint = True,
-												add_element = 'bind')
+												add_element = 'bnd')
 					
 					ik_rig = ik.IkRig( joints = ik_jnts[1:],
 								pole_vector_jnt = self.pv_jnt_list[i],
@@ -260,6 +320,7 @@ class FingerRig:
 								)
 					self.ctrl_dict[self.finger_names[i]] = [base_rig.single_ctrl] +[ ik_rig.ctrls]
 					cmds.parent(base_rig.single_ctrl, self.ctrl_grp)
+					self._setup_finger_poses(base_rig.single_ctrl, filter_name=self.finger_names[i])
 				
 			elif self.feature == 'fkIk':
 				for i, finger in enumerate(self.joint_list):
@@ -273,7 +334,7 @@ class FingerRig:
 									shape_rotation = [90, 90, 0],
 									global_scale = self.global_scale,
 									create_joint = True,
-									add_element = 'bind')
+									add_element = 'bnd')
 
 					fkIk_rig_jnts = finger[1:]
 					finger_rig = fkIk.FkIkRig(joints = fkIk_rig_jnts,
@@ -304,70 +365,64 @@ class FingerRig:
 						default_ik_pv = self.default_ik_pv,
 						default_ik_end = self.default_ik_end,
 						create_bind_joint = True,
+						rig_end_joint=False,
 						base_parent_type = 'parent')
 					self.ctrl_dict[self.finger_names[i]] = [base_rig.single_ctrl] + [finger_rig.ctrl_dict]
 					cmds.parent(base_rig.offset_grps[0], self.ctrl_grp)
+				self._setup_finger_poses(self.pose_ctrl)
+				
 			else:
 				cmds.error(f'Incorrect @feature: {self.feature}. Support feature: "fk", "ik", "fkIk"')
 
-		if self.finger_pose:
-			path = io.define_path(POSE_FOLDER)
-			pose_dict = io.import_data(POSE_FILE, folder_name = POSE_FOLDER, path = path)
-
-			for pose in pose_dict:
-				for ctrl in pose_dict[pose]:
-					sdk_grp = bb.create_offset_group(ctrl,[pose+'_sdk'])
-					sdk_grp = sdk_grp[ctrl][0]
-					bb.set_color(objects=[sdk_grp], color='lightPink', viewport=False, outliner=True)
-					sdk_attr = pose_dict[pose][ctrl][0][0][0]
-					sdk_val = pose_dict[pose][ctrl][0][1][0]
-					cmds.setAttr(f'{sdk_grp}.{sdk_attr}', sdk_val)
-					driven = f'{sdk_grp}.{sdk_attr}'
-					bb.set_driven_key(main_ctrl=base_rig.single_ctrl, attr = pose, driven = driven, values = {0:0,10:sdk_val, -5:sdk_val*(-0.5)})
 
 
 
-#######################################################
-#######################################################
-#######################################################
-#######################################################
-
-# UPPER PARENT -> 
-
-#######################################################
-#######################################################
-#######################################################
-#######################################################
+# from bbTools.core import bbFingerRig as finger
+# reload(finger)
+# fngr_dict = finger.finger_pose_data(
+# 					pose = 'fist',
+# 					finger_ctrls = ['l_thumb_03_fk_ctl', 'l_ring_02_fk_ctl', 'l_pinky_03_fk_ctl', 'l_ring_tmp_01_01_ctl', 'l_pinky_04_fk_ctl', 'l_middle_04_fk_ctl', 'l_index_04_fk_ctl', 'l_pinky_tmp_01_01_ctl', 'l_middle_tmp_01_01_ctl', 'l_thumb_tmp_01_01_ctl', 'l_pinky_02_fk_ctl', 'l_middle_02_fk_ctl', 'l_middle_03_fk_ctl', 'l_index_03_fk_ctl', 'l_ring_04_fk_ctl', 'l_ring_03_fk_ctl', 'l_index_tmp_01_01_ctl', 'l_index_02_fk_ctl', 'l_thumb_02_fk_ctl'],
+# 					log = False,
+# 					export = True
+# 				)
 
 
-
-
-# ctrl_dict			
-# {'thumb': ['l_thumb_tmp_01_ctl', 
-# 			{'fk': ['l_thumb_02_fk_ctl', 'l_thumb_03_fk_ctl'], 
-# 			'ik': ['l_thumb_02_ik_ctl', 'l_thumb_pv_tmp_ctl', 'l_thumb_ik_ctl']}], 
-
-# 'index': ['l_index_tmp_01_ctl', 
-# 			{'fk': ['l_index_02_fk_ctl', 'l_index_03_fk_ctl', 'l_index_04_fk_ctl'], 
-# 			'ik': ['l_index_02_ik_ctl', 'l_index_pv_tmp_ctl', 'l_index_ik_ctl']}], 
-
-# 'middle': ['l_middle_tmp_01_ctl', 
-# 			{'fk': ['l_middle_02_fk_ctl', 'l_middle_03_fk_ctl', 'l_middle_04_fk_ctl'], 
-# 			'ik': ['l_middle_02_ik_ctl', 'l_middle_pv_tmp_ctl', 'l_middle_ik_ctl']}], 
-
-# 'ring': ['l_ring_tmp_01_ctl', 
-# 			{'fk': ['l_ring_02_fk_ctl', 'l_ring_03_fk_ctl', 'l_ring_04_fk_ctl'], 
-# 			'ik': ['l_ring_02_ik_ctl', 'l_ring_pv_tmp_ctl', 'l_ring_ik_ctl']}], 
-
-# 'pinky': ['l_pinky_tmp_01_ctl', 
-# 			{'fk': ['l_pinky_02_fk_ctl', 'l_pinky_03_fk_ctl', 'l_pinky_04_fk_ctl'], 
-# 			'ik': ['l_pinky_02_ik_ctl', 'l_pinky_pv_tmp_ctl', 'l_pinky_ik_ctl']}]}
-
-
-
-
-
-
+# l_finger_rig = finger.FingerRig(
+# 						joint_list = [['l_thumb_01_tmp_jnt', 'l_thumb_02_tmp_jnt', 'l_thumb_03_tmp_jnt', 'l_thumb_04_tmp_jnt'],
+# 					['l_index_01_tmp_jnt', 'l_index_02_tmp_jnt', 'l_index_03_tmp_jnt', 'l_index_04_tmp_jnt', 'l_index_05_tmp_jnt'],
+# 					['l_middle_01_tmp_jnt', 'l_middle_02_tmp_jnt', 'l_middle_03_tmp_jnt', 'l_middle_04_tmp_jnt', 'l_middle_05_tmp_jnt'],
+# 					['l_ring_01_tmp_jnt', 'l_ring_02_tmp_jnt', 'l_ring_03_tmp_jnt', 'l_ring_04_tmp_jnt', 'l_ring_05_tmp_jnt'], 
+# 					['l_pinky_01_tmp_jnt', 'l_pinky_02_tmp_jnt', 'l_pinky_03_tmp_jnt', 'l_pinky_04_tmp_jnt', 'l_pinky_05_tmp_jnt']
+# 					],
+# 						finger_names = ['thumb', 'index', 'middle', 'ring', 'pinky'],
+# 						pv_jnt_list = ['l_thumb_pv_tmp_jnt', 'l_index_pv_tmp_jnt', 'l_middle_pv_tmp_jnt','l_ring_pv_tmp_jnt', 'l_pinky_pv_tmp_jnt'], 
+# 						setting_obj = None,
+# 						rig_name = 'finger',
+# 						side = None,
+# 						aim_axis = 'x',
+# 						up_axis = 'z',
+# 						rotate_order = 'xyz',
+# 						connection_type = 'parent',
+# 						scale = 0.2,
+# 						feature = 'fkIk',
+# 						stretch = True,
+# 						squash = True,
+# 						stretch_attr = 'stretch',
+# 						squash_attr = 'squash',
+# 						global_scale = super_rig.scale_uniform,
+# 						base_orient_loc = None,
+# 						end_orient_loc = None,
+# 						world_space = super_rig.placement_ctrl,
+# 						ctrl_parent = super_rig.ctrl_grp,
+# 						mod_parent = super_rig.mod_grp,
+# 						bind_parent = l_arm_rig.bind_jnts[-1],
+# 						upper_driver = l_arm_rig.bind_jnts[-1],
+# 						color = 'sky',
+# 						default_fkIk = 0,
+# 						default_ik_base = 1,
+# 						default_ik_end = 1,
+# 						finger_pose = False
+# 						)
 
 
 
