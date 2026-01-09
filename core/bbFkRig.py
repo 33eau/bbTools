@@ -22,6 +22,7 @@ NAMER = naming.get_namer(NAME_TEMPLATE)
 class FKRig:
 	def __init__(self, 
 				joints=None,
+				upper_driver = None,
 				rig_name=None,
 				element_name='fk',
 				side=None,
@@ -38,9 +39,11 @@ class FKRig:
 				rig_end_joint = True,
 				ctrl_parent =None,
 				shape_rotation = None,
+				base_orient_loc = None,
 				**controller_kwargs
                 ):
 		self.joints = joints
+		self.upper_driver =  upper_driver
 		self.rig_name = rig_name
 		self.element_name = element_name
 		self.stretch = stretch
@@ -56,6 +59,7 @@ class FKRig:
 		self.rig_end_joint =  rig_end_joint
 		self.ctrl_parent =  ctrl_parent
 		self.shape_rotation = shape_rotation
+		self.base_orient_loc =  base_orient_loc
 
 		if not joints or not isinstance(joints, list) or len(joints) < 2:
 			raise ValueError("The 'joints' argument must be a list of at least two joint names.")
@@ -91,6 +95,7 @@ class FKRig:
 		fk_rig = bc.Controller(objects = self.rig_joints, 
 						main_ctrl_grp = main_ctrl_grp, 
 						offset_names = self.offset_names, 
+						upper_driver = self.upper_driver,
 						shape = self.shape, 
 						color = self.color, 
 						connection_type = self.connection_type ,
@@ -101,6 +106,8 @@ class FKRig:
 						
 		self.ctrls = fk_rig.ctrls
 		self.grps = fk_rig.offset_grps
+		if self.base_orient_loc:
+			cmds.matchTransform(self.grps[0][0], self.base_orient_loc)
 
 		if self.stretch:
 			self._do_stretch_and_squash()
@@ -113,16 +120,30 @@ class FKRig:
 		squash_attr_name = self.squash_attr
 		aim_attr = bb.axis_convert(self.aim_axis, 'absolute_letter')
 
-		# if self.rig_end_joint:
-		# 	stretch_ctrls = self.ctrls
-		# else:
-		# 	stretch_ctrls = self.ctrls[:-1]
-		stretch_ctrls = self.ctrls[:-1]
-		for i, ctrl in enumerate(stretch_ctrls):
-			stretch_grp = self.grps[i+1][0]
+		if not self.rig_end_joint:
+			base, element, number, side, suffix = NAMER.extract(self.rig_joints[-1])
+			self.end_grp = bb.create_node('group', base, element + [stretch_attr_name, 'tip'], number, side, p=self.ctrls[-1])
+			cmds.matchTransform(self.end_grp, self.joints[-1])
+			self.grps.append([self.end_grp])
+			bb.create_constrain([self.end_grp], self.joints[-1])
+			stretch_ctrl = self.ctrls
+		else:
+			stretch_ctrl = self.ctrls[:-1]
+
+		for i, ctrl in enumerate(stretch_ctrl):
 			number = parser.find_number(ctrl)
-			original_posi = cmds.getAttr(f'{self.rig_joints[i+1]}.t{aim_attr}')
-			
+			is_end_case = (i == len(stretch_ctrl)-1 and not self.rig_end_joint)
+
+			if is_end_case:
+				stretch_grp = self.grps[-1][0]
+				orig_obj = self.grps[-1][0]
+			else:
+				idx = min(i + 1, len(self.rig_joints) - 1)
+				stretch_grp = self.grps[idx][0]
+				orig_obj = self.rig_joints[idx]
+
+			original_posi = cmds.getAttr(f'{orig_obj}.t{aim_attr}')
+					
 			bb.attr_separator(ctrl, ln='extraAttr')
 			cmds.addAttr( ctrl, ln = stretch_attr_name, at = 'float', dv = 0.0, k = True )
 
