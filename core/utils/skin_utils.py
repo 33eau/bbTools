@@ -161,9 +161,11 @@ def import_skin_weight(objects=None, search_for=None, replace_with=None, prefix=
 			if obj_type == 'mesh':
 				total_vertex = cmds.polyEvaluate( obj, v = True )
 				for iVtx in range( 0, total_vertex ):
+					sVtx = str(iVtx)
 					for i, jnt in enumerate( influences ):
-						value = weight_data[iVtx][i]
-						cmds.skinPercent( skin_node,transformValue=[(jnt, value)] )
+						value = weight_data[sVtx][i]
+						target_vtx = f'{obj}.vtx[{iVtx}]'
+						cmds.skinPercent( skin_node, target_vtx, transformValue=[(jnt, value)] )
 
 			elif obj_type == 'nurbsSurface':
 				spans_uv = cmds.getAttr(f'{obj}.spansUV')[0]
