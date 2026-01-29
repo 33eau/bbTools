@@ -1,14 +1,21 @@
 import os
 from importlib import reload
 import maya.cmds as cmds
+import maya.mel as mel
+
+from maya.api import OpenMaya as om
+from maya.api import OpenMayaAnim as oma
+
 from . import io_utils as io
 from ..naming import namer_factory as naming 
 from ..naming import current_project
+from ..naming import parser
 from ..naming import templates
 
 reload(io)
 reload(naming)
 reload(current_project)
+reload(parser)
 reload(templates)
 
 FOLDER_NAME = 'data'
@@ -16,16 +23,17 @@ FOLDER_NAME = 'data'
 NAME_TEMPLATE = current_project.PROJECT
 NAMER = naming.get_namer(NAME_TEMPLATE)
 
-def get_skin_cluster_name(object):
+def get_skin_cluster_name(object, log=False):
 	shape = cmds.listRelatives( object, s=True, f=True)[0]
-	history = cmds.listHistory(shape)
+	history = cmds.listHistory(shape, lv=3)
 	skin_cluster_nodes = cmds.ls(history, typ = 'skinCluster')
-	if not skin_cluster_nodes:
-		cmds.warning(f"{object} has not been skinned.")
-		return
+	if log:
+		if not skin_cluster_nodes:
+			cmds.warning(f"{object} has not been skinned.")
+		return None
 	return skin_cluster_nodes
 
-def export_skin_weight(objects=None):
+def export_skin_weight(objects=None, log=False, skc = None):
 	export_path = io.define_path(FOLDER_NAME)
 	replace_list = []
 	no_data_list = []
@@ -45,7 +53,7 @@ def export_skin_weight(objects=None):
 		skin_weight_dict['type'] = obj_type
 		skin_weight_dict['name'] = []
 
-		skin_cluster = get_skin_cluster_name(obj)
+		skin_cluster = skc if skc else get_skin_cluster_name(obj)
 		if skin_cluster:
 			for skin in skin_cluster:
 				skin_weight_dict['name'].append(skin)
@@ -81,15 +89,15 @@ def export_skin_weight(objects=None):
 			file_path = os.path.join(export_path, file_name)
 			if os.path.isdir( file_path ):
 				replace_list.append(obj)
-			io.export_data(file_name=file_name, data=skin_weight_dict, path=export_path)
+			io.export_data(file_name=file_name, data=skin_weight_dict, path=export_path, log = log)
 		else:
 			no_data_list.append(obj)
 	if replace_list:
-		print(f'replaced weights: {replace_list}')
+		print(f'REPLACED weights: {replace_list}')
 	if no_data_list:
 		print(f'no data objects: {no_data_list}')
 	
-def import_skin_weight(objects=None, search_for=None, replace_with=None, prefix='', suffix='', name_space=None, create_missing_joints = False, path=None):
+def import_skin_weight(objects=None, search_for=None, replace_with=None, prefix='', suffix='', name_space=None, create_missing_joints = False, path=None, log = False):
 	if path:
 		import_path = path
 	else:
@@ -124,8 +132,10 @@ def import_skin_weight(objects=None, search_for=None, replace_with=None, prefix=
 			influences = skin_weight_dict[skin]['influences']
 			weight_data = skin_weight_dict[skin]['weight_data']
 
+
 			if obj_type != expected_type:
 				cmds.warning(f'Different object type {obj}: {obj_type}, expected {expected_type}.')		
+
 			
 			missing_list = []
 			for i, jnt in enumerate(influences):
@@ -150,18 +160,20 @@ def import_skin_weight(objects=None, search_for=None, replace_with=None, prefix=
 			
 			skin_node = cmds.skinCluster( influences, obj, tsb = True, n = skin )[0]
 			skin_nodes.append(skin_node)
-			cmds.setAttr( f'{skin_node}.skinningMethod', envelope )
+			cmds.setAttr( f'{skin_node}.envelope', envelope )
 			cmds.setAttr( f'{skin_node}.skinningMethod', skinningMethod )
-			cmds.setAttr( f'{skin_node}.skinningMethod', useComponents )
-			cmds.setAttr( f'{skin_node}.skinningMethod', deformUserNormals )
-			cmds.setAttr( f'{skin_node}.normalizeWeights', False )
-			cmds.skinPercent( skin_node, obj, nrm = False, prw = 100 )
+			cmds.setAttr( f'{skin_node}.useComponents', useComponents )
+			cmds.setAttr( f'{skin_node}.deformUserNormals', deformUserNormals )
+			# cmds.setAttr( f'{skin_node}.normalizeWeights', False )
+			# cmds.skinPercent( skin_node, obj, nrm = False, prw = 100 )
 			cmds.setAttr( f'{skin_node}.normalizeWeights', normalizeWeights )
 
 			if obj_type == 'mesh':
 				total_vertex = cmds.polyEvaluate( obj, v = True )
 				for iVtx in range( 0, total_vertex ):
 					sVtx = str(iVtx)
+					if len(influences) == 1:
+						return
 					for i, jnt in enumerate( influences ):
 						value = weight_data[sVtx][i]
 						target_vtx = f'{obj}.vtx[{iVtx}]'
@@ -179,7 +191,10 @@ def import_skin_weight(objects=None, search_for=None, replace_with=None, prefix=
 
 	if no_data_list:
 		print( f'noDataObjs : {no_data_list}')
-	print(f'{len(skin_nodes)} has been imported.')
+	if log:
+		print(f'{len(skin_nodes)} has been imported.')
+
+
 
 def bind_skin(jnts, target_obj, **kwargs):
 	"""
@@ -204,8 +219,128 @@ def name_it(objects=''):
 		base, element, number, side, suffix = NAMER.extract(obj) 
 		element.append(suffix)
 		node_name = NAMER.format(base, element, number, side, templates.TYPE_SUFFIX['skinCluster'])
-		skc = cmds.rename(skc, node_name)
+		skc = cmds.rename(skc, f'skincluster__{obj}')
 	return skc
+
+def unbind_skin(obj = ''):
+	skin_cluster_nodes = get_skin_cluster_name(obj)
+	orig_nodes = []
+	for skin_node in skin_cluster_nodes:
+		connections = cmds.listConnections(skin_node, c=True)
+		for node in connections:
+			if 'originalGeometry' in node:
+				print(node)
+				orig_node = cmds.listConnections(node, p=True)[0]
+				orig_node = orig_node.split('.')[0]
+				orig_nodes.append(orig_node)
+
+	for skin in skin_cluster_nodes:
+		cmds.skinCluster(skin, e = True, ub=True)
+		#print(f'Unbind {skin} successfully.')
+	cmds.delete(orig_nodes)
+	return None
+
+def get_api_info(obj):
+	"""Returns (MDagPath, MFnSkinCluster, MObject components)"""
+	sel = om.MSelectionList()
+	sel.add(obj)
+	dag_path = sel.getDagPath(0)
+
+	sc_names = get_skin_cluster_name(obj)
+	if not sc_names: return None
+
+	sel.add(sc_names[0])
+	sc_obj = sel.getDependNode(1)
+	fn_skin = oma.MFnSkinCluster(sc_obj)
+
+	# Determine Component Type
+	shape = cmds.listRelatives(obj, s=True, f=True)[0]
+	obj_type = cmds.objectType(shape)
+
+	comp_fn = om.MFnSingleIndexedComponent()
+	if obj_type == 'mesh':
+		comp_obj = comp_fn.create(om.MFn.kMeshVertComponent)
+		type_id = 0
+	else: # nurbsSurface
+		comp_obj = comp_fn.create(om.MFn.kNurbsSurfaceCVComponent)
+		type_id = 1
+	
+	return dag_path, fn_skin, comp_obj, type_id
+
+def export_skin(obj, path=None):
+	if path is None:
+		work_path = cmds.workspace(q=1, rd=1)
+		data_path = work_path + FOLDER_NAME
+		path = os.path.join(data_path, f"{obj}.skinweight")
+	else:
+		path = os.path.join(path, f"{obj}.skinweight")
+
+	dag_path, fn_skin, comp_obj, type_id = get_api_info(obj)
+
+	# Get all influence objects (joints)
+	inf_dags = fn_skin.influenceObjects()
+	inf_names = [inf.partialPathName() for inf in inf_dags]
+
+	# GET ALL WEIGHTS AT ONCE
+	weights, _ = fn_skin.getWeights(dag_path, comp_obj)
+
+	work_path = cmds.workspace(q=1, rd=1)
+	data_path = work_path + FOLDER_NAME
+	path = os.path.join(data_path, f"{obj}.skinweight")
+	io.export_binary_data(path, inf_names, list(weights), type_id)
+	print(f"Exported {obj} weights.")
+
+def import_skin(obj, path = None, search_for=None, replace_with=None, name_space=None):
+	if path is None:
+		work_path = cmds.workspace(q=1, rd=1)
+		data_path = work_path + FOLDER_NAME
+		path = os.path.join(data_path, f"{obj}.skinweight")
+	else:
+		path = os.path.join(path, f"{obj}.skinweight")
+
+	# 1. Load Data
+	saved_type, saved_infs, saved_weights = io.import_binary_data(path)
+
+	# 2. Get API objects for target
+	dag_path, fn_skin, comp_obj, current_type = get_api_info(obj)
+	
+	processed_infs = []
+	for jnt in saved_infs:
+		if name_space:
+			jnt = f"{name_space}:{jnt}"
+		if search_for and replace_with:
+			jnt = jnt.replace(search_for, replace_with)
+		processed_infs.append(jnt)
+
+	inf_indices = om.MIntArray()
+	for name in processed_infs:
+		if cmds.objExists(name):
+			inf_sel = om.MSelectionList()
+			inf_sel.add(name)
+			inf_indices.append(fn_skin.indexForInfluenceObject(inf_sel.getDagPath(0)))
+		else:
+			cmds.warning(f"Joint {name} not found in scene!")
+	bind_skin(processed_infs, obj)
+	fn_skin.setWeights(dag_path, comp_obj, inf_indices, om.MDoubleArray(saved_weights))
+
+def mirror_skinweight():
+	sel = cmds.ls(sl=True)[0]
+	skin_cluster = get_skin_cluster_name(sel)[0]
+	infs = cmds.skinCluster(skin_cluster, q=True, inf=True)
+	for inf in infs:
+		side = parser.find_element(inf, 'sides')
+		op_side = 'r_' if side == 'l_' else 'l_'
+		if side:
+			opposite_inf = inf.replace(side, op_side, 1)
+			if cmds.objExists(opposite_inf):
+				try:
+					cmds.skinCluster(skin_cluster, ai=opposite_inf, e=True, dr=2, lw=True, wt=0)
+				except:pass
+			else:
+				print(f'ERROR: {opposite_inf} no exist')
+	cmds.copySkinWeights(ss=skin_cluster, ds=skin_cluster, mirrorMode='YZ', surfaceAssociation='closestPoint', influenceAssociation='oneToOne')
+	print(f'Mirrored {skin_cluster} completed')
+
 
 
 

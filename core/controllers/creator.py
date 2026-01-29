@@ -1,16 +1,20 @@
 #25Oct27
 from importlib import reload
 import maya.cmds as cmds # type: ignore
+import maya.mel as mel
+import numpy as np
 from . import shape_library
 from . import shape_color 
 
 from ..utils import rig_utils as bb
+from ..utils import io_utils as io
 from ..data import constants as constants
 from ..naming import namer_factory as naming
 from ..naming import parser
 from ..naming import current_project
 
 reload(bb)
+reload(io)
 reload(shape_library)
 reload(constants)
 reload(naming)
@@ -23,6 +27,9 @@ SUFFIX = 'ctrl'
 
 CUSTOM_TEMPLATE = 'hatrig'
 CUSTOM_SUFFIX = 'ctl'
+
+CTRL_SHAPES = 'ctrl_shapes.ctrlshapes'
+FOLDER_NAME = 'data'
 
 
 def get_naming_data(obj=None, name_input=None, side_input =None, index=0, multiple = False, gimbal = False):
@@ -71,6 +78,7 @@ class Controller:
 					upper_driver=None,
 					run = True,
 					log = False,
+					clean_elem = None,
 					**kwargs 
 					):
 		
@@ -91,6 +99,7 @@ class Controller:
 		self.temp = temp
 		self.fk_chain = fk_chain
 		self.upper_driver =  upper_driver
+		self.clean_elem =  clean_elem
 
 		self.lock_attrs = lock_attrs + ['v'] if lock_attrs else ['v']
 
@@ -113,8 +122,12 @@ class Controller:
 			for i, target in enumerate(targets):
 				multiple = len(self.objects) > 1
 				name_data = get_naming_data(target, self.name, self.side, i, multiple)
+				ctrl_name = name_data['ctrl_name']
+				if self.clean_elem:
+					ctrl_name = parser.clean_name(ctrl_name, self.clean_elem)
+
 				ctrl = self.create_curve(
-								ctrl_name = name_data['ctrl_name'], 
+								ctrl_name = ctrl_name, 
 								shape = self.shape, 
 								color=self.color, 
 								line_width=self.line_width, 
@@ -150,7 +163,7 @@ class Controller:
 				cmds.delete(targets)
 
 			if self.upper_driver:
-				self.create_connection(top_grp, self.upper_driver)
+				self.create_connection(self.offset_grps[0][0], self.upper_driver)
 		finally:
 			cmds.undoInfo(closeChunk=True)
 		return self.ctrls
@@ -178,7 +191,7 @@ class Controller:
 		crv = cmds.curve(p=points, d=1)
 		crv = cmds.rename(crv, ctrl_name)
 		shp = cmds.listRelatives(crv, s=True)[0]
-
+		cmds.closeCurve(shp, ch=False, ps=1, rpo=True, bb=0.5, bki=0, p=0.1)
 		bb.set_color([crv], color)
 		bb.scale_shape(crv, scale)
 		bb.move_shape(crv, move)
@@ -279,6 +292,8 @@ class SuperRoot:
 
 		cmds.addAttr( self.super_ctrl, ln = self.scale_attr, at = 'float', dv = 1, k = True )
 		self.scale_uniform = f'{self.super_ctrl}.{self.scale_attr}'
+		for ax in 'xyz':
+			cmds.connectAttr(self.scale_uniform, f'{self.super_ctrl}.s{ax}')
 		bb.matrix_constrain(parent=self.placement_ctrl, target=self.ctrl_grp, type='parent')
 
 	def _create_master_controler(self, base_name = None, shape = None, scale = 1.0):
@@ -323,7 +338,7 @@ class SingleControl:
 			self.color =  color 
 
 		# Return result
-		self.single_ctrl = None
+		self.ctrl = None
 		self.offset_grps = None
 		self.bind_jnt = None
 
@@ -340,9 +355,9 @@ class SingleControl:
 			if self.add_element:
 				element.append(self.add_element)
 			self.bind_jnt = bb.create_node('joint', base_name, element, number, side)
-			bb.snap([self.target_obj], self.bind_jnt)
 			if self.bind_parent and cmds.objExists(self.bind_parent):
 				cmds.parent(self.bind_jnt, self.bind_parent)
+			bb.snap([self.target_obj], self.bind_jnt)
 			drive_target = self.bind_jnt
 
 		base_name = NAMER.format(base, element, number, None, None)
@@ -355,18 +370,118 @@ class SingleControl:
 							**kwargs
 						)
 		
-		if self.global_scale:
-			for ax in 'xyz':
-				cmds.connectAttr(f'{self.global_scale}', f'{controller.offset_grps[0][0]}.s{ax}')
+		# if self.global_scale:
+		# 	for ax in 'xyz':
+		# 		cmds.connectAttr(f'{self.global_scale}', f'{controller.offset_grps[0][0]}.s{ax}')
 		
 		if self.delete_temp:
 			cmds.delete(self.target_obj)
 		
 		if self.upper_driver:
-			bb.create_constrain([self.upper_driver], controller.offset_grps[0][0])
+			bb.create_constrain([self.upper_driver], controller.offset_grps[0][0], 'parentScale')
 
-		self.single_ctrl = controller.ctrls[0]
+		self.ctrl = controller.ctrls[0]
 		self.offset_grps = controller.offset_grps
+
+def mirror_ctrl(source = None, target = None, world_space = False, mirror = True, color = False):
+
+	if source is None and target is None:
+		selection = cmds.ls(sl=True)
+		if len(selection) > 1:
+			source = selection[1]
+			targets = selection[:-1]
+		elif len(selection) == 1:
+			source = cmds.ls(sl=True)[0]
+			side = parser.find_element(source, 'sides')
+			formatted_side=parser.format_side(side, 'upper')
+			if formatted_side is not None:
+				opposite_side = 'L' if formatted_side == 'R' else 'R'
+				base, element, number, side, suffix = NAMER.extract(source)
+				target  = NAMER.format(base, element, number, opposite_side, suffix)
+				if not cmds.objExists(target):
+					print(f'ERROR: "{source}" does not have the opposite side ctrl to mirror to.')
+				else:
+					targets = [target]
+		else:
+			print('Please Select Target(s) and Source')
+	else:
+		targets = [target]
+
+	cv_count, spans_count, degree_count = bb.get_curve_info(source)
+	source_position = cmds.xform(f'{source}.cv[0:{cv_count}]', q=True, t=True, ws = world_space, os = not world_space)
+	position_array = np.array(source_position, dtype='float64').reshape(-1,3)
+
+	max_value = cmds.getAttr( f'{source}.maxValue' )
+	keep_range = 2 if max_value == spans_count else 0 # curve parameter 0-1
+
+	for target in targets:
+		cmds.rebuildCurve(target, d = degree_count,ch=True, s = spans_count, rpo = True, end = 1, kr = keep_range, kcp = 0, kep = 1, kt = 0, tol = 0.01)
+		cmds.select(target)
+		#mel.eval(f'BakeNonDefHistory;')
+		mel.eval(f'performBakeNonDefHistory False;')
+
+		inverse_value = -1 if mirror else 1
+		for i, position in enumerate(position_array):
+			cmds.xform(f'{target}.cv[{i}]', t=(position[0] * inverse_value, position[1], position[2]), ws = world_space, os= not world_space, a=True)
+
+		if color:
+			target_shp = cmds.listRelatives(target, s=True)[0]
+			line_width = cmds.getAttr( f'{source}Shape.lineWidth')
+			rgb_color = cmds.getAttr( f'{source}Shape.overrideColorRGB')
+
+			cmds.setAttr( f'{target_shp}.overrideEnabled', 1)
+			cmds.setAttr(f'{target_shp}.overrideRGBColors',1)
+			cmds.setAttr( f'{target_shp}.lineWidth', line_width)
+			cmds.setAttr( f'{target_shp}.overrideColorRGB', *rgb_color[0])
+
+
+def export_ctrl_shapes(ctrl_suffix='_ctl', file_name = None, world_space = False):
+	file_name = file_name if file_name else CTRL_SHAPES
+	path = io.define_path(FOLDER_NAME)
+	data = {}
+	ctrl_list = cmds.ls(f'*{ctrl_suffix}')
+	cha_name = bb.get_cha_name()
+	data['character'] = cha_name
+	data['legend'] = ['cv', 'spans', 'degree', 'form', 'line_width', 'color', 'position']
+	data['ctrl_list'] = []
+	for ctrl in ctrl_list:
+		data['ctrl_list'].append(ctrl)
+		cv, spans, degree = bb.get_curve_info(ctrl)
+		shape = cmds.listRelatives( ctrl, s = True )[0]
+		form = cmds.getAttr(f'{ctrl}.form')
+		line_width = cmds.getAttr(f'{shape}.lineWidth')
+		color = cmds.getAttr(f'{shape}.overrideColorRGB')[0]
+		cv_position = []
+		for i in range(0, cv ):
+			position = cmds.xform( f'{ctrl}.cv[{i}]', q = True, t = True, os = not world_space, ws = world_space )
+			cv_position.append(tuple(position))
+		#cv_position = np.array(list(cv_position), dtype='float64')
+		data[ctrl] = [cv, spans, degree, form, line_width, color, cv_position]
+	io.export_data(file_name = file_name, data = data, path = path, indent = 4, mode = 'overwrite', log = True)
+
+def import_ctrl_shapes(search_for=None, replace_with=None, prefix=None, suffix=None, namespace = None, file_name=None, world_space = False):
+	path = io.define_path(FOLDER_NAME)
+	file_name = file_name if file_name else CTRL_SHAPES
+	data = io.import_data(file_name = file_name, path = path)
+
+
+	ctrl_list = data['ctrl_list']
+	imported_len = 0
+	for i, ctrl in enumerate(ctrl_list):
+		if cmds.objExists(ctrl):
+			shape = cmds.listRelatives(ctrl, s=True)[0]
+			new_ctrl = cmds.rebuildCurve( shape, ch = False, rpo = True, rt = 0, end = True, kr = True, kcp = False, kep = True, kt = False, s = data[ctrl][1], d = data[ctrl][2], tol = 0.01, o=True)[0]
+			cmds.setAttr(f'{new_ctrl}.form', data[ctrl][3])
+			cmds.setAttr(f'{shape}.lineWidth', data[ctrl][4])
+			cmds.setAttr(f'{shape}.overrideColorRGB', data[ctrl][5][0], data[ctrl][5][1], data[ctrl][5][2])
+			for i in range( 0, data[ctrl][0] ):
+				cmds.xform( f'{new_ctrl}.cv[{i}]', t = data[ctrl][6][i], os = not world_space, ws = world_space )
+			imported_len += 1
+		else:
+			pass
+	print(f'🔻 Imported {imported_len} CtrlShapes from : {path}')	
+
+
 
 
 

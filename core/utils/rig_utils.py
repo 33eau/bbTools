@@ -2,7 +2,7 @@
 from importlib import reload
 import maya.cmds as cmds
 import maya.mel as mel
-import maya.OpenMaya as om
+import maya.api.OpenMaya as om
 import numpy as np
 
 from ..controllers import shape_color 
@@ -64,6 +64,11 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 		named_node = [ikh, eff]
 	elif node_type == 'ikSc':
 		ikh, eff = cmds.ikHandle(n = node_name, sol='ikSCsolver', **clean_kwargs)
+		eff_name = NAMER.format(base, elements, number, side, 'eff')
+		eff = cmds.rename(eff, eff_name)
+		named_node = [ikh, eff]
+	elif node_type == 'ikSpline':
+		ikh, eff = cmds.ikHandle(n = node_name, sol='ikSplineSolver', **clean_kwargs)
 		eff_name = NAMER.format(base, elements, number, side, 'eff')
 		eff = cmds.rename(eff, eff_name)
 		named_node = [ikh, eff]
@@ -200,6 +205,12 @@ def get_orig_shape(objects=None, delete_unused=True):
 def freeze(object, t=True, r=True, s=True):
 	cmds.makeIdentity( object, a = True, t=t, r=r, s=s , n = False, pn = True)
 
+def get_cha_name(working_folder = 'scenes'):
+	file_path = (cmds.file ( q = True, loc = True  )).split('/')
+	work_folder_index = file_path.index(working_folder)
+	cha_name = file_path[work_folder_index-1]
+	return cha_name
+
 # -------------------------------------------------------------------
 # Curve / shape helpers
 # -------------------------------------------------------------------
@@ -232,17 +243,20 @@ def rebuild_curve_to_match(source, target):
 
 def create_joint_on_curve(curve='', joint_num=20, fk=True, aim_axis='', up_axis='', world_up_axis='', negative_dir = False, ikSpline=False):
 	curve_lenght = cmds.arclen(curve)
-	name = get_name(curve)
-	side = get_side(curve)
 	rad = 1
 	result = []
+	base, element, number, side, suffix = NAMER.extract(curve)
 
-	cmds.select(cl=True)
-	for i in range(joint_num +1):
-		joint = cmds.joint(n=f'{name}{i+1:02d}{side}_jnt', p = (curve_lenght/joint_num * i, 0, 0), rad = rad)
+	for i in range(joint_num):
+		posi = cmds.xform( f'{curve}.cv[{i}]', ws=True, t=True, q=True )
+		joint = create_node('joint', base, element, f'{i+1:02d}', side, p =posi, rad = rad)
+		if fk:
+			if len(result) > 0:
+				cmds.parent(joint, result[-1])
 		result.append(joint)
-
-	ikh = cmds.ikHandle(sol='ikSplineSolver', sj=result[0], ee=result[-1], c=curve, pcv=False, ccv=False)
+	return
+	#ikh = cmds.ikHandle(sol='ikSplineSolver', sj=result[0], ee=result[-1], c=curve, pcv=False, ccv=False)
+	ikh = create_node('ikSpline', base, element, number, side, sj=result[0], ee=result[-1], c=curve, pcv=False, ccv=False)
 
 	cmds.makeIdentity(result, apply=True, t=1, r=1, s=1, n=0, pn=1)
 	ALL_AXES = ['x', 'y', 'z']
@@ -258,8 +272,8 @@ def create_joint_on_curve(curve='', joint_num=20, fk=True, aim_axis='', up_axis=
 		cmds.delete(ikh)
 	else:
 		fk=True
-		cmds.rename(ikh[0], f'{name}IkSpline{side}_ikh')
-		cmds.rename(ikh[1], f'{name}IkSpline{side}_eff')
+		# cmds.rename(ikh[0], f'{name}IkSpline{side}_ikh')
+		# cmds.rename(ikh[1], f'{name}IkSpline{side}_eff')
 	if not fk:
 		cmds.parent(result, w=True)
 
@@ -393,13 +407,14 @@ def snap_to_component(create_joint=False ):
 	items = cmds.ls(sl=True, fl=True)
 	center_position = get_center_position(items)
 	if create_joint:
-		result = cmds.joint(n='centerPosition_jnt')
+		result = cmds.joint(n='centerPosition_jnt', rad = 0.4)
+		cmds.parent(result, world=True)
 	else:
 		result = cmds.spaceLocator(n='centerPosition_loc')[0]
 	cmds.xform(result, t=center_position, a=True, ws=True)
 	return result
 
-def create_offset_group(objects=None, offset_names=["Zro"]): 
+def create_offset_group(objects=None, offset_names=['Zro'], remove_elem = ['tmp']): 
 	objects = objects or cmds.ls(sl=True) or []
 	if not isinstance(objects, list):
 		objects = [objects]
@@ -425,7 +440,10 @@ def create_offset_group(objects=None, offset_names=["Zro"]):
 		element = element if element else []
 		offset_groups = []
 		for i, offset_name in enumerate(offset_names):
-			new_group = create_node(node_type='group', base=base, elements=element + [offset_name], number=number, side=side)
+			group_name = NAMER.format(base, element + [offset_name], number, side, 'grp')
+			group_name = parser.clean_name(group_name, remove_elem)
+			#new_group = create_node(node_type='group', base=base, elements=element + [offset_name], number=number, side=side)
+			new_group = cmds.group(empty=True, n = group_name)
 			snap([obj],new_group)
 			if i > 0 :
 				cmds.parent(new_group, offset_groups[-1])
@@ -556,11 +574,15 @@ def move_shape(object, value=[]):
 	try:
 		if node_type == 'mesh':
 			vtx_count = cmds.polyEvaluate(shape, v=True)
-			cmds.move(value[0], value[1], value[2], f'{shape}.vtx[0:{vtx_count-1}]', r=True)
+			#cmds.move(value[0], value[1], value[2], f'{shape}.vtx[0:{vtx_count-1}]', r=True, cs=False)
+			cmds.xform(f'{shape}.vtx[0:{vtx_count-1}]', ws=True, t=value, r=True)
+	
 		
 		elif node_type in ['nurbsCurve', 'nurbsSurface']:
 			spans = cmds.getAttr(f'{shape}.spans')
-			cmds.move(value[0], value[1], value[2], f'{shape}.cv[0:{spans}]', r=True)
+			#cmds.move(value[0], value[1], value[2], f'{shape}.cv[0:{spans}]', r=True, cs=False)
+			cmds.xform(f'{shape}.cv[0:{spans}]', ws=True, t=value, r=True)
+	
 		
 		else:
 			cmds.warning(f'Unsupported node type "{node_type}" on {shape}. Skipping.')
@@ -571,48 +593,162 @@ def move_shape(object, value=[]):
 
 def rotate_curve(curve, rotation=[]):
 	cv_count = get_cv_count(curve)
-	cmds.rotate( *rotation, f'{curve}.cv[0:{cv_count}]', r = True, objectCenterPivot = True, objectSpace = True, forceOrderXYZ = True)
+	#cmds.rotate( rotation[0], rotation[1], rotation[2], f'{curve}.cv[0:{cv_count}]', cs= False, forceOrderXYZ = True)
+	cmds.xform(f'{curve}.cv[0:{cv_count}]', ro=rotation, os=True, r=True)
+	
+# ——————————————————————————————————————————————————————————————————————
+# Matrix
+# ——————————————————————————————————————————————————————————————————————
+def matrix_constrain(parent, target, type='parent', store_orig = False, channels = ['translate', 'rotate', 'scale']):
+	elem_name = ['mtxCons']
+	if not parent and not target:
+		sel =  cmds.ls(sl=True)
+		if len(sel) != 2:
+			cmds.warning('Please select PARENT object and TARGET object.')
+			return
+		parent = sel[0]
+		target = sel[-1]
 
-def matrix_constrain(parent='', target='', type='point'): #25Oct26
 	base, element, number, side, suffix = NAMER.extract(target)
-	element = element if element else []
-	if type in ['point', 'parent']:
-		pass
+	target_parent = cmds.listRelatives(target, p=True)[0]
+
+	# Use openMaya matrix to check if two objects are in the exactly same position
+	parent_mtx = om.MMatrix(cmds.getAttr(f'{parent}.worldMatrix[0]'))
+	target_mtx = om.MMatrix(cmds.getAttr(f'{target}.worldMatrix[0]'))
+
+	# List of nodes that will be connected to multMatrix respectively. different Type -> different Order
+	matrix_stack = []
+	mtx_cons_mmt = create_node('multMatrix', base, element + elem_name , number, side)
+
+	# Check for equality with a small tolerance
+	offset = not (target_mtx.isEquivalent(parent_mtx, 1e-10))
+	if offset:
+		offset_matrix = target_mtx * parent_mtx.inverse()
+		matrix_stack.append(list(offset_matrix))
+
+	if type == 'point':
+		matrix_stack.insert(0, f'{parent}.worldMatrix[0]')
+	elif type == 'parent':
+		matrix_stack.append(f'{parent}.worldMatrix[0]')
 	else:
-		cmds.error(f'Matrix constrain type: "{type}". Must be either "point" or "parent"')
+		cmds.warning(f'Incorrect type: {type}. Please choose either point or parent.')
 		return
 
-	# offset value
-	offset_mmt = create_node('multMatrix', base, element + ['OffsetMtxCnn'], number, side)
-	cmds.connectAttr(f'{target}.worldMatrix', f'{offset_mmt}.matrixIn[0]')
-	cmds.connectAttr(f'{parent}.worldInverseMatrix', f'{offset_mmt}.matrixIn[1]')
-	offset_mtx = cmds.getAttr(f'{offset_mmt}.matrixSum')
+	for i, node in enumerate(matrix_stack):
+		if isinstance(node, list):
+			cmds.setAttr(f'{mtx_cons_mmt}.matrixIn[{i}]', node, type = 'matrix')
+		else:
+			cmds.connectAttr(node, f'{mtx_cons_mmt}.matrixIn[{i}]')
 
-	# mtx connect
-	mtx_connect_mmt = create_node('multMatrix', base, element + ['MtxCnn'], number, side)
-	if type == 'point':
-		cmds.connectAttr(f'{parent}.worldMatrix', f'{mtx_connect_mmt}.matrixIn[0]')
-		cmds.setAttr(f'{mtx_connect_mmt}.matrixIn[1]', offset_mtx, type='matrix')
-	elif type == 'parent':
-		cmds.setAttr(f'{mtx_connect_mmt}.matrixIn[0]', offset_mtx, type='matrix')
-		cmds.connectAttr(f'{parent}.worldMatrix', f'{mtx_connect_mmt}.matrixIn[1]')
-	cmds.connectAttr(f'{target}.parentInverseMatrix', f'{mtx_connect_mmt}.matrixIn[2]')
+	cmds.connectAttr(f'{target_parent}.worldInverseMatrix[0]', f'{mtx_cons_mmt}.matrixIn[{len(matrix_stack)}]')
+	#cmds.connectAttr(f'{mtx_cons_mmt}.matrixSum', f'{target}.offsetParentMatrix')	
 
-	# decompose mtx
-	mtx_connect_dcm = create_node('decomposeMatrix', base, element + ['MtxCnn'], number, side)
-	cmds.connectAttr(f'{mtx_connect_mmt}.matrixSum', f'{mtx_connect_dcm}.inputMatrix')
+	type_selection_pmt = create_node('pickMatrix', base,  element + elem_name + ['pick'], number, side)
+	off_types = ['translate', 'rotate', 'scale']
+	off_types = [type for type in off_types if type not in channels]
 
-	# RESULT
-	cmds.connectAttr(f'{mtx_connect_dcm}.outputTranslate', f'{target}.t')
-	cmds.connectAttr(f'{mtx_connect_dcm}.outputRotate', f'{target}.r')
-	cmds.connectAttr(f'{mtx_connect_dcm}.outputScale', f'{target}.s')
+	for type in off_types:
+		cmds.setAttr(f'{type_selection_pmt}.use{type.capitalize()}', 0)
 
-	# Clean up
-	cmds.delete(offset_mmt)
+	cmds.connectAttr(f'{mtx_cons_mmt}.matrixSum', f'{type_selection_pmt}.inputMatrix')
+	cmds.connectAttr(f'{type_selection_pmt}.outputMatrix', f'{target}.offsetParentMatrix')
+
+	# ———————————————— store Orginal Values —————————————————
+	# -------- For reconnecting purpose in the future -------
+	if store_orig:
+		attr_name = 'originalMatrix'
+		if not cmds.attributeQuery(attr_name, node = target):
+			cmds.addAttr(target, ln = attr_name, at='matrix')
+		orig_mtx = cmds.getAttr(f'{target}.worldMatrix[0]')
+		cmds.setAttr(f'{target}.{attr_name}', orig_mtx, type='matrix')
+
+	if cmds.objectType(target) == 'joint':
+		if store_orig:
+			joint_orient_val = cmds.joint(target, o=True, q=True)
+			attr_name = 'originalOrientation'
+			if not cmds.attributeQuery(attr_name, node = target):
+				cmds.addAttr(target, ln = attr_name, at='double3')
+			for ax in 'XYZ':
+				cmds.addAttr( target, ln =f'{attr_name}{ax}', at = 'double', p = attr_name )
+				
+			cmds.setAttr(f'{target}.{attr_name}', *joint_orient_val)
+		cmds.setAttr(f'{target}.jo', *[0,0,0])
+
+	cmds.setAttr(f'{target}.rotate', *[0,0,0])
+	cmds.setAttr(f'{target}.t', *[0,0,0])
+
+
+def create_local_world(local=None, world=None, target=None, types=['rotate'], attr_name='worldOrient', ctrl=None, dv=0.0):
+	'''
+	create local world space switch using matrix
+	:param target (str): target object, use 'upper' for creating locwor group above ctrl
+	:param types (str list): translate, rotate, scale, shear
+	:param dv (float): default value. 0.0=local, 1.0=world
+	'''
+		
+	elem_name = ['locwor']
+
+	if target == 'upper':
+		group = create_offset_group([ctrl], elem_name)
+		target = group[ctrl][0]
+
+	base, element, number, side, suffix = NAMER.extract(target)
+
+	target_parent = cmds.listRelatives(target, p=True)[0]
+
+	local_mtx = om.MMatrix(cmds.getAttr(f'{local}.worldMatrix[0]'))
+	world_mtx = om.MMatrix(cmds.getAttr(f'{world}.worldMatrix[0]'))
+
+	target_mtx = om.MMatrix(cmds.getAttr(f'{target}.worldMatrix[0]'))
+
+	# —————— LOCAL ——————
+
+	local_mtx_cons_mmt = create_node('multMatrix', base, element + ['local'] , number, side)
+	offset = not (target_mtx.isEquivalent(local_mtx, 1e-10))
+	mtx_channel = 0
+	if offset:
+		offset_matrix = target_mtx * local_mtx.inverse()
+		cmds.setAttr( f'{local_mtx_cons_mmt}.matrixIn[{mtx_channel}]', offset_matrix, type='matrix')
+		mtx_channel += 1
+
+	cmds.connectAttr(f'{local}.worldMatrix[0]', f'{local_mtx_cons_mmt}.matrixIn[{mtx_channel}]')
+	cmds.connectAttr(f'{target_parent}.worldInverseMatrix[0]', f'{local_mtx_cons_mmt}.matrixIn[{mtx_channel+1}]')
+
+	# —————— WORLD ——————
+	world_mtx_cons_mmt = create_node('multMatrix', base, element + ['world'] , number, side)
+	offset_matrix = target_mtx * world_mtx.inverse()
+	cmds.setAttr( f'{world_mtx_cons_mmt}.matrixIn[0]', offset_matrix, type='matrix')
+	cmds.connectAttr(f'{world}.worldMatrix[0]', f'{world_mtx_cons_mmt}.matrixIn[{mtx_channel}]')
+	cmds.connectAttr(f'{target_parent}.worldInverseMatrix[0]', f'{world_mtx_cons_mmt}.matrixIn[{mtx_channel+1}]')
+
+	blend_bmt = create_node('blendMatrix', base, element + ['locwor', 'blend'], number, side)
+
+	cmds.connectAttr(f'{local_mtx_cons_mmt}.matrixSum', f'{blend_bmt}.inputMatrix')
+	cmds.connectAttr(f'{world_mtx_cons_mmt}.matrixSum', f'{blend_bmt}.target[0].targetMatrix')
+
+	type_selection_pmt = create_node('pickMatrix', base,  element + ['locwor', 'pick'], number, side)
+
+	off_types = ['translate', 'rotate', 'scale', 'shear']
+	off_types = [type for type in off_types if type not in types]
+
+	for type in off_types:
+		cmds.setAttr(f'{type_selection_pmt}.use{type.capitalize()}', 0)
+
+	cmds.connectAttr(f'{blend_bmt}.outputMatrix', f'{type_selection_pmt}.inputMatrix')
+	cmds.connectAttr(f'{type_selection_pmt}.outputMatrix', f'{target}.offsetParentMatrix')
+
+	cmds.setAttr(f'{target}.rotate', *[0,0,0])
+	cmds.setAttr(f'{target}.t', *[0,0,0])
+
+	cmds.addAttr( ctrl, ln = attr_name, at = 'float', min = 0, max = 1, dv = dv, k = True )
+	cmds.connectAttr(f'{ctrl}.{attr_name}', f'{blend_bmt}.target[0].weight')
+
+
+# ——————————————————————————————————————————————————————————————————————
 
 def direct_connect(parents=None, targets =None):
-	parents = parents or cmds.ls(sl=True)[-1] or []
-	targets = targets or cmds.ls(sl=True)[:-1] or []
+	parents = parents or cmds.ls(sl=True)[-1] 
+	targets = targets or cmds.ls(sl=True)[:-1] 
 	try:
 		if len(parents) != len(targets):
 			for target in targets:
@@ -672,7 +808,25 @@ def reset_value(all=True, attrs = []): #25Nov18
 				except:
 					print(f'{obj}.{attr}: cannot be reset. Skipped')
 
-def space_switch(parentA = 'top_ctrl', parentB = 'base_ctrl', attr = 'followPosition', target_grp = '', follow_type = 'point', ctrl = 'mid_ctrl'):
+def constrain_switch(parent_a='', parent_b='', target='', attr_name='', follow_type='parent', ctrl='', multiply = True, dv=0, min=0, max=1):
+	cmds.addAttr( ctrl, ln = attr_name, at = 'float', min = 0, max = 1, dv = dv, k = True )
+	cons_node = create_constrain([parent_a, parent_b], target, follow_type)[0][0]
+	base, element, number, corner_side, suffix = NAMER.extract(ctrl)
+	if multiply:
+		val_mul_mdl = create_node('multDoubleLinear', base, element, number, corner_side)
+		cmds.setAttr( f'{val_mul_mdl}.i2', 0.1)
+		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{val_mul_mdl}.i1')
+		output = f'{val_mul_mdl}.o'
+	else:
+		output = f'{ctrl}.{attr_name}'
+	cmds.connectAttr(output, f'{cons_node}.{parent_b}W1')
+	space_switch_rev = create_node('reverse', base, element, number, corner_side)
+	cmds.connectAttr(output, f'{space_switch_rev}.ix')
+	cmds.connectAttr(f'{space_switch_rev}.ox', f'{cons_node}.{parent_a}W0')
+	output_attr = f'{ctrl}.{attr_name}'
+	return output_attr
+
+def space_switch(parentA = 'top_ctrl', parentB = 'base_ctrl', attr = 'followPosition', target_grp = '', follow_type = 'point', ctrl = 'mid_ctrl', dv = 0 ):
 
 	if not target_grp:
 		target_grp = create_offset_group([ctrl], offset_names=['Space'])
@@ -685,13 +839,15 @@ def space_switch(parentA = 'top_ctrl', parentB = 'base_ctrl', attr = 'followPosi
 	local_grp = create_node('group', base, element + [follow_type, 'loc'], number, side, suffix)
 	cmds.matchTransform(world_grp, target_grp)
 	cmds.matchTransform(local_grp, target_grp)
-	create_constrain([parentA], local_grp)
-	create_constrain([parentB], world_grp)
+	# create_constrain([parentA], local_grp)
+	# create_constrain([parentB], world_grp)
+	cmds.parent(local_grp, parentA)
+	cmds.parent(world_grp, parentB)
 
 	cons = create_constrain( parents=[local_grp, world_grp], target=target_grp, type=follow_type, maintain_offset=True)[0][0]
 
 	if not cmds.attributeQuery(attr, node=ctrl, exists=True):
-		cmds.addAttr( ctrl, ln = attr, at = 'float', min = 0, max = 1, dv = 0, k = True )
+		cmds.addAttr( ctrl, ln = attr, at = 'float', min = 0, max = 1, dv = dv, k = True )
 
 	switch_rev = create_node('reverse', base, ['space'], None, side)
 	cmds.connectAttr(f'{ctrl}.{attr}', f'{switch_rev}.ix')
@@ -849,15 +1005,15 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 							ctrl = 'r_thigh_fk_ctl',
 							type = 'orient',
 							default_index = 1,
-							mod_grp = None
+							#mod_grp = None
 						):
 
-	if not cmds.objExists('spaces_grp'):
-		spaces_grp = create_node('group', 'spaces', None, None, None)
-		if mod_grp:
-			cmds.parent(spaces_grp, mod_grp)
-	else:
-		spaces_grp = 'spaces_grp'
+	# if not cmds.objExists('spaces_grp'):
+	# 	spaces_grp = create_node('group', 'spaces', None, None, None)
+	# 	if mod_grp:
+	# 		cmds.parent(spaces_grp, mod_grp)
+	# else:
+	# 	spaces_grp = 'spaces_grp'
 		
 	if world_space:
 		parent_spaces = [world_space] + parent_spaces 
@@ -866,18 +1022,11 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 	cmds.addAttr(ctrl, ln = attr_name, at='enum', en=enum_names, dv=default_index, k=True )
 
 	target_name, target_element, target_number, target_side, suffix = NAMER.extract(target) 
+	target_base_name = parser.get_base_name(target_name, first_name=True)
 	target_element = target_element if target_element else []
 
-	spaces = []
-	for space in parent_spaces:
-		base, element, number, side, suffix = NAMER.extract(space)
-		space_name_element = target_element + [base] + element + ['space']
-		space_grp = create_node('group', target_name, space_name_element, target_number, target_side, suffix, p = spaces_grp)
-		cmds.matchTransform(space_grp, target)
-		create_constrain([space], space_grp)
-		spaces.append(space_grp)
+	parent_con = create_constrain(parent_spaces, target, type=type, maintain_offset=True)[0][0]
 
-	parent_con = create_constrain(spaces, target, type=type, maintain_offset=True)[0][0]
 	try:
 		cmds.setAttr(f'{parent_con}.interpType', 2)
 	except:pass
@@ -889,17 +1038,86 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 			cmds.setAttr( f'{space_cdt}.ctr', 1)
 			cmds.setAttr( f'{space_cdt}.cfr', 0)
 			cmds.connectAttr(f'{ctrl}.{attr_name}', f'{space_cdt}.ft')
-			cmds.connectAttr(f'{space_cdt}.ocr', f'{parent_con}.{spaces[i]}W{i}')
+			cmds.connectAttr(f'{space_cdt}.ocr', f'{parent_con}.{parent_spaces[i]}W{i}')
 	else:
-		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{parent_con}.{spaces[1]}W1')
+		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{parent_con}.{parent_spaces[1]}W1')
 		space_switch_rev = create_node(node_type='reverse', base=target_name, elements=target_element+[attr_name], number=target_number, side=target_side )
 		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{space_switch_rev}.ix')
-		cmds.connectAttr(f'{space_switch_rev}.ox', f'{parent_con}.{spaces[0]}W0')
+		cmds.connectAttr(f'{space_switch_rev}.ox', f'{parent_con}.{parent_spaces[0]}W0')
+
 
 def over_and_out(module_name = '', output_name = ''):
 	cmds.select(cl=True)
 	output_name = output_name.replace('None', '')
 	print(f'Created\t{module_name}:\t\t{output_name}')
+
+
+def aim_follow(parent=None, upper_parent = None, target=None, aim='x', up='y', attr_name = None, ctrl = None, dv = 1):
+	elem_name = [attr_name] or ['follow']
+
+	if target == 'upper':
+		group = create_offset_group([ctrl], elem_name)
+		target = group[ctrl][0]
+
+	base, element, number, side, suffix = NAMER.extract(target)
+
+	locator = create_node('locator', base, element + elem_name, number, side)
+	cmds.matchTransform(locator, upper_parent)
+	aim_vector = axis_convert(aim, 'vector')
+	up_vector = axis_convert(up, 'vector')
+	up_str = axis_convert(up, 'absolute_letter')
+	create_constrain([upper_parent], locator, 'point')
+	
+	cmds.delete(cmds.aimConstraint(parent, locator, aimVector = aim_vector, upVector = up_vector, wut = 'objectrotation', wu = up_vector, wuo = parent, mo = False))
+	skip_axes = 'xyz'.replace(up_str,'')
+	skip_axes = [ax for ax in skip_axes]
+	cmds.aimConstraint(parent, locator, aimVector = aim_vector, upVector = up_vector, wut = 'objectrotation', wu = up_vector, wuo = parent, mo = False)#, skip = skip_axes)
+
+	create_local_world(local=locator, world=upper_parent, target=target, types=['translate', 'rotate'], attr_name=attr_name, ctrl=ctrl, dv=dv)
+
+	return locator
+
+def joint_label(remove = None, remove_from_last = 2, force_on=False):
+	selection = cmds.ls(sl=True)
+	current = cmds.getAttr( f'{selection[0]}.drawLabel')
+	stage_val = 1 if current == 0 else 0
+	stage_val = stage_val if not force_on else 1
+
+	for jnt in selection:
+		if cmds.objectType(jnt) != 'joint':
+			continue
+		else:
+			cmds.setAttr( f'{jnt}.drawLabel', stage_val)
+		full_name = jnt
+		if remove:
+			full_name = jnt.replace(remove, '')
+		if remove_from_last:
+			full_name = full_name.split('_')[:-remove_from_last]
+			full_name = '_'.join(full_name)
+
+		cmds.setAttr( f'{jnt}.type', 18 )
+		cmds.setAttr( f'{jnt}.otherType',  full_name , type = 'string' )
+	return None
+
+def lock_attrs(obj='', attrs = ['t', 'r', 's'], unlock = False):
+	if not obj:
+		obj = cmds.ls(sl=True)[0]
+	for attr in attrs:
+		for ax in 'xyz':
+			try:
+				cmds.setAttr(f'{obj}.{attr}{ax}', l = not unlock)
+				#cmds.setAttr(f'{obj}.{attr}{ax}', cb = not unlock)
+			except:pass
+
+def delete_orig():
+	orig_nodes=[]
+	selection = cmds.ls(sl=True)
+	for sel in selection:
+		shapes = cmds.listRelatives(sel, s=True)
+		for shape in shapes:
+			if 'Orig' in shape:
+				orig_nodes.append(shape)
+	cmds.delete(orig_nodes)
 
 
 ########################################################
