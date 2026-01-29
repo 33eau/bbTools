@@ -8,6 +8,7 @@ AXIS_MAP = {
 	"z":  [(0, 0, 1), 2, 4, 3],
 	"-z": [(0, 0, -1),2, 5, 4]
 }
+# index, letter, absolute_letter, vector, ik_twist_index, ik_twist_up_index, cross_vector, cross_letter
 # AXIS_MAP value: [(vector), attr index, ikTwist axis Order, ikTwist up axis Order]
 AXIS_NP = {
     'x':  np.array([1, 0, 0]),
