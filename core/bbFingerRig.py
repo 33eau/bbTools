@@ -209,39 +209,6 @@ class FingerRig:
 					# Reset to default
 					cmds.setAttr(driven, 0)
 
-	def _setup_finger_poses(self, pose_ctrl, filter_name=None):
-		if not self.finger_pose:
-			return
-		path = io.define_path(POSE_FOLDER)
-		pose_dict = io.import_data(POSE_FILE, folder_name = POSE_FOLDER, path = path)
-		for pose in pose_dict:
-			if not cmds.attributeQuery(pose, node=pose_ctrl, exists=True):
-				cmds.addAttr(pose_ctrl, ln=pose, at='float', min=-10, max=10, dv=0, k=True)
-
-			for ctrl in pose_dict[pose]:
-				if filter_name and filter_name not in ctrl:
-					continue
-				# Create SDK offset group
-				sdk_grp_dict = bb.create_offset_group(ctrl, [f'{pose}_sdk'])
-				sdk_grp = sdk_grp_dict[ctrl][0]
-				bb.set_color(objects=[sdk_grp], color='lightPink', viewport=False, outliner=True)
-				
-				# Setup driven keys for each attribute in the pose data
-				for attr_data in pose_dict[pose][ctrl]:
-					sdk_attr = attr_data[0][0]
-					sdk_val = attr_data[1][0]
-					
-					driven = f'{sdk_grp}.{sdk_attr}'
-					# Set driven keys: 0 is default, 10 is full pose, -5 is reverse half
-					bb.set_driven_key(
-						main_ctrl=pose_ctrl, 
-						attr=pose, 
-						driven=driven, 
-						values={0: 0, 10: sdk_val, -5: sdk_val * (-0.5)}
-					)
-					# Reset to default
-					cmds.setAttr(driven, 0)
-
 	def _build(self):
 		if self.feature == 'fk':
 			for i, finger in enumerate(self.joint_list):
@@ -275,19 +242,27 @@ class FingerRig:
 				cmds.parent(self.ctrl_grp, self.ctrl_parent)
 			if self.mod_parent:
 				cmds.parent(self.mod_grp, self.mod_parent)
+			if self.global_scale:
+				scale_obj = self.global_scale.split('.')[0]
+				bb.snap([scale_obj], self.ctrl_grp)
+			if self.upper_driver:
+				bb.create_constrain([self.upper_driver], self.mod_grp, 'parentScale')
+				bb.create_constrain([self.upper_driver], self.ctrl_grp, 'parentScale')
 
 			if self.feature == 'ik':
+				upper_driver_scale = self.upper_driver + '.sx'
 				for i, finger in enumerate(self.joint_list):	
 					generated_joints = bb.duplicate_joint_chain(finger, add_elements=['ik'], remove_element='tmp')
 					ik_jnts = generated_joints['ik']
 
 					base_rig = bc.SingleControl(target_obj=ik_jnts[0], 
-												upper_driver=self.upper_driver,
+												#upper_driver=self.upper_driver,
 												bind_parent=self.bind_parent, 
 												ctrl_parent=self.ctrl_parent, 
 												scale = self.scale * 4, 
 												color = self.color, 
 												shape = FK_BASE_CTRL_SHAPE,
+												connection_type = 'matrix_parent',
 												shape_rotation = [90, 90, 0],
 												global_scale = self.global_scale,
 												create_joint = True,
@@ -307,27 +282,29 @@ class FingerRig:
 								scale = self.scale,
 								stretch_attr = self.stretch_attr,
 								squash_attr = self.squash_attr,
-								global_scale = self.global_scale,
+								global_scale = upper_driver_scale,
 								base_orient_loc = self.base_orient_loc,
 								end_orient_loc = self.end_orient_loc,
 								world_space = self.world_space,
-								ctrl_parent = base_rig.single_ctrl,
+								ctrl_parent = base_rig.ctrl,
 								mod_parent = self.mod_grp,
-								upper_driver = base_rig.single_ctrl,
+								upper_driver = base_rig.ctrl,
 								default_ik_base = self.default_ik_base,
 								default_ik_pv = self.default_ik_pv,
 								default_ik_end = self.default_ik_end,
 								)
-					self.ctrl_dict[self.finger_names[i]] = [base_rig.single_ctrl] +[ ik_rig.ctrls]
-					cmds.parent(base_rig.single_ctrl, self.ctrl_grp)
-					self._setup_finger_poses(base_rig.single_ctrl, filter_name=self.finger_names[i])
+					self.ctrl_dict[self.finger_names[i]] = [base_rig.ctrl] +[ ik_rig.ctrls]
+					cmds.parent(base_rig.ctrl, self.ctrl_grp)
+					self._setup_finger_poses(base_rig.ctrl, filter_name=self.finger_names[i])
 				
 			elif self.feature == 'fkIk':
+				upper_driver_scale = self.upper_driver + '.sx'
 				for i, finger in enumerate(self.joint_list):
 					base_rig = bc.SingleControl(target_obj=finger[0], 
-									upper_driver = self.upper_driver,
+									#upper_driver = self.upper_driver,
 									bind_parent=self.bind_parent, 
 									ctrl_parent=self.ctrl_parent, 
+									connection_type = 'matrix_parent',
 									scale = self.scale * 4, 
 									color = self.color, 
 									shape = FK_BASE_CTRL_SHAPE,
@@ -352,14 +329,14 @@ class FingerRig:
 						color = self.color,
 						stretch_attr = self.stretch_attr,
 						squash_attr = self.squash_attr,
-						global_scale = self.global_scale,
+						global_scale = upper_driver_scale,
 						base_orient_loc = self.base_orient_loc,
 						end_orient_loc = self.end_orient_loc,
 						world_space = self.world_space,
-						ctrl_parent = base_rig.single_ctrl,
+						ctrl_parent = base_rig.ctrl,
 						mod_parent = self.mod_grp,
 						bind_parent = base_rig.bind_jnt,
-						upper_driver = base_rig.single_ctrl,
+						upper_driver = base_rig.ctrl,
 						default_fkIk = self.default_fkIk,
 						default_ik_base = self.default_ik_base,
 						default_ik_pv = self.default_ik_pv,
@@ -367,7 +344,7 @@ class FingerRig:
 						create_bind_joint = True,
 						rig_end_joint=False,
 						base_parent_type = 'parent')
-					self.ctrl_dict[self.finger_names[i]] = [base_rig.single_ctrl] + [finger_rig.ctrl_dict]
+					self.ctrl_dict[self.finger_names[i]] = [base_rig.ctrl] + [finger_rig.ctrl_dict]
 					cmds.parent(base_rig.offset_grps[0], self.ctrl_grp)
 				self._setup_finger_poses(self.pose_ctrl)
 				

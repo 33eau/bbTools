@@ -251,7 +251,8 @@ class FkIkRig:
 			)
 		
 		for rig_jnt, bind_jnt in zip(rig_jnts, bind_jnts):
-			bb.create_constrain([rig_jnt], bind_jnt, 'parentScale')
+			#bb.create_constrain([rig_jnt], bind_jnt, 'parentScale')
+			bb.matrix_constrain(rig_jnt, bind_jnt, 'parent')
 		
 		self.bind_jnts = bind_jnts
 

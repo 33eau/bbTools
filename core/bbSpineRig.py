@@ -100,15 +100,17 @@ class SpineRig:
 
 		# =============== Ik System ===============
 		ik_mod_grp = bb.create_node('group', self.rig_name, ['ik', 'Mod'], side=self.side, p =self.mod_grp)
+		ik_con_mod_grp = bb.create_node('group', self.rig_name, ['ik', 'con', 'Mod'], side=self.side, p =ik_mod_grp)
 		ik_ctrl_grp = bb.create_node('group', self.rig_name, ['ik', 'Ctrl'], side=self.side, p=self.ctrl_grp)
-		bb.create_constrain([self.upper_driver], ik_ctrl_grp, 'psc')
+		#bb.create_constrain([self.upper_driver], ik_ctrl_grp, 'psc')
 
 		if not self.rig_on_provided_joints:
 			element_names = ['Spline', 'Bnd']
 			joints = bb.duplicate_joint_chain(self.joints, add_elements=element_names, remove_element='tmp')
 
 		rig_jnts = joints[element_names[0]]
-		cmds.parent(rig_jnts[0], ik_mod_grp)
+		self.bind_jnts = joints[element_names[1]]
+		cmds.parent(rig_jnts[0], ik_con_mod_grp)
 
 		ikh, eff, ik_crv = cmds.ikHandle(sj=rig_jnts[0], ee=rig_jnts[-1], sol='ikSplineSolver', pcv=False)
 		ikh_name = NAMER.format(self.rig_name, ['Spline'], None, self.side, templates.TYPE_SUFFIX['ikHandle'])
@@ -119,13 +121,9 @@ class SpineRig:
 
 		cmds.rebuildCurve(ik_crv, ch=False, rpo=True, rt=False, end=True, kr=False, kcp=False, kep=True, kt=False, s=self.num_mid_controls+1, d=1, tol=0.01 )
 		ik_crv = cmds.rename(ik_crv, crv_name)
-		cmds.parent([ikh, ik_crv], ik_mod_grp)
+		cmds.parent(ikh,ik_con_mod_grp)
+		cmds.parent(ik_crv, ik_mod_grp)
 
-		self.bind_jnts = joints[element_names[1]]
-		for i, jnt in enumerate(rig_jnts):
-			bb.create_constrain([jnt], self.bind_jnts[i])
-			#cmds.setAttr( f'{self.bind_jnts[i]}.radius', self.scale)
-		
 		cv_count = bb.get_cv_count(ik_crv)
 		cv_joints = []
 		if self.num_mid_controls > 1:
@@ -147,15 +145,20 @@ class SpineRig:
 
 		base_jnt = cv_joints[0]
 		top_jnt = cv_joints[-1]
-		cmds.parent(cv_joints, ik_mod_grp)
-
+		cmds.parent(cv_joints, ik_con_mod_grp)
+		try:
+			ctrl_shape = {k: v for k, v in self.controller_kwargs.items() if k == 'shape'}
+			ctrl_shape = ctrl_shape['shape']
+			self.controller_kwargs.pop('shape')
+		except:
+			ctrl_shape = 'chest'
 		baseIk_ctrl = bc.Controller(
 						objects = [base_jnt],
 						main_ctrl_grp = ik_ctrl_grp,
 						name = f'{self.rig_name}IkBase',
 						side = self.side,
 						offset_names = ['Zro','Position', 'Offset'],
-						shape = 'chest',
+						shape = ctrl_shape,
 						color = self.subColor,
 						scale = self.scale,
 						connection_type = 'None',
@@ -169,7 +172,7 @@ class SpineRig:
 						name = f'{self.rig_name}IkTop',
 						side = self.side,
 						offset_names = ['Zro','Position', 'Offset'],
-						shape = 'chest',
+						shape = ctrl_shape,
 						color = 'green',
 						scale = self.scale,
 						connection_type = 'None',
@@ -202,6 +205,7 @@ class SpineRig:
 			cmds.setAttr( f'{position_bcl}.{default}', 0,0,0)
 			cmds.setAttr( f'{position_bcl}.{result}', *target_position)
 			cmds.setAttr( f'{ctrl}.t', 0, 0, 0)
+			bb.attr_separator(ctrl)
 			cmds.addAttr( ctrl, ln = self.position_attr, at = 'float', min = 0, max = 1, dv = dv, k = True )
 			cmds.connectAttr(f'{ctrl}.{self.position_attr}', f'{position_bcl}.blender')
 			cmds.connectAttr(f'{position_bcl}.op', f'{target_grps[i]}.t')
@@ -229,7 +233,7 @@ class SpineRig:
 						shape = 'squareRound',
 						color = f'light{self.subColor.capitalize()}',
 						scale = self.scale,
-						connection_type = 'parentScale',
+						connection_type = 'matrix_parent',
 						**self.controller_kwargs
 						)
 		mid_ctrls = mid_controllers.ctrls
@@ -240,6 +244,7 @@ class SpineRig:
 
 		# Advance Twist
 		up_ab_axis = bb.axis_convert(self.up_axis, 'absolute_letter')
+		other_axes = 'xyz'.replace(up_ab_axis, '')
 		fwd_axis_idx = bb.axis_convert(self.aim_axis, 'ik_twist_index')
 		up_axis_idx = bb.axis_convert(self.up_axis, 'ik_twist_up_index')
 		up_axis_value = -1 if '-' in self.up_axis else 1
@@ -249,9 +254,11 @@ class SpineRig:
 		cmds.setAttr( f'{ikh}.dWorldUpAxis', up_axis_idx)
 		cmds.setAttr( f'{ikh}.dWorldUpVector{up_ab_axis.upper()}', up_axis_value)
 		cmds.setAttr( f'{ikh}.dWorldUpVectorEnd{up_ab_axis.upper()}', up_axis_value)
+		for ax in other_axes:
+			cmds.setAttr( f'{ikh}.dWorldUpVector{ax.upper()}', 0)
+			cmds.setAttr( f'{ikh}.dWorldUpVectorEnd{ax.upper()}', 0)
 		cmds.connectAttr(f'{base_ctrl}.xformMatrix', f'{ikh}.dWorldUpMatrix', f = True )
 		cmds.connectAttr(f'{top_ctrl}.xformMatrix', f'{ikh}.dWorldUpMatrixEnd', f = True )
-
 
 		# Ik stretch
 		feature = self.stretch_attr
@@ -278,7 +285,6 @@ class SpineRig:
 
 		strech_switch_bcl = bb.create_node('blendColors', self.rig_name, [feature, 'switch'], None, self.side)
 		cmds.connectAttr(f'{dist_perc_mdv}.ox', f'{strech_switch_bcl}.c1r')
-		#cmds.setAttr( f'{strech_switch_bcl}.c2r', 1)
 		cmds.connectAttr(f'{top_ctrl}.{self.stretch_attr}', f'{strech_switch_bcl}.blender')
 
 		# Squash Volume
@@ -304,16 +310,16 @@ class SpineRig:
 		cmds.setAttr( f'{squash_switch_bcl}.c2r', 1)
 		cmds.connectAttr(f'{top_ctrl}.{self.squash_attr}', f'{squash_switch_bcl}.blender')
 
-		result_scale_mdl = bb.create_node('multDoubleLinear', self.rig_name, [feature, 'result', 'scale'], None, self.side)
-		cmds.connectAttr(f'{strech_switch_bcl}.opr', f'{result_scale_mdl}.i1')
-		cmds.connectAttr(f'{self.global_scale}', f'{result_scale_mdl}.i2')
+		# result_scale_mdl = bb.create_node('multDoubleLinear', self.rig_name, [feature, 'result', 'scale'], None, self.side)
+		# cmds.connectAttr(f'{strech_switch_bcl}.opr', f'{result_scale_mdl}.i1')
+		# cmds.connectAttr(f'{self.global_scale}', f'{result_scale_mdl}.i2')
 
 		for rig_jnt in rig_jnts[1:]:
 			base, element, number, _, _ = NAMER.extract(rig_jnt)
 			orig_pos = cmds.getAttr(f'{rig_jnt}.t{self.aim_axis}')
 			orig_pos_mdl = bb.create_node('multDoubleLinear', base, element + ['orig', 'pos'], number, self.side )
 			cmds.setAttr( f'{orig_pos_mdl}.i1', orig_pos )
-			cmds.connectAttr(f'{result_scale_mdl}.o', f'{orig_pos_mdl}.i2')
+			cmds.connectAttr(f'{strech_switch_bcl}.opr', f'{orig_pos_mdl}.i2')
 
 			output_stretch = cmds.getAttr(f'{orig_pos_mdl}.o')
 			if round(output_stretch, 5) == round(orig_pos, 5):
@@ -330,7 +336,7 @@ class SpineRig:
 				cmds.error(f'{self.squash_attr} Output is not 1 by default.')
 			
 		#Space Switch
-		all_spaces_grp = bb.create_node('group', self.rig_name, ['spaces'], side=self.side, p=ik_mod_grp )
+		#all_spaces_grp = bb.create_node('group', self.rig_name, ['spaces'], side=self.side, p=ik_mod_grp )
 		follow_type = ['point', 'orient']
 		follow_attrs = ['followPosition', 'followRotation']
 		for typ, attr in zip(follow_type, follow_attrs):
@@ -339,7 +345,7 @@ class SpineRig:
 				space_grps = bb.space_switch(parentA = self.baseNeg_grp, parentB = self.topNeg_grp , attr = attr, target_grp = target_grp, follow_type = typ, ctrl = ctrl)
 				follow_value = (1/(len(mid_ctrls)+1)) * (i+1)
 				cmds.setAttr( f'{ctrl}.{attr}', follow_value)
-				cmds.parent(space_grps, all_spaces_grp)
+				#cmds.parent(space_grps, all_spaces_grp)
 		# =============== End of Ik System ===============
 
 		# =============== Fk System ===============
@@ -359,18 +365,27 @@ class SpineRig:
 						)
 		fk_ctrls = fk_controllers.ctrls
 		fk_grp = fk_controllers.offset_grps
-		bb.create_constrain([self.upper_driver], fk_grp[0][0], type='parentScale' )
+		#bb.create_constrain([self.upper_driver], fk_grp[0][0], type='parentScale' )
 
 		for i, fk in enumerate(fk_ctrls):
 			bb.create_constrain([fk], mid_grps[i][0] , type='parent')
 		bb.create_constrain([fk_ctrls[-1]], top_grp[0][0] , type='parent')
 		# =============== End of fk System ===============
 		# =============== Organize ===============
-		bb.matrix_constrain(self.upper_driver, self.ctrl_grp, 'parent')
-		cmds.parent(self.bind_jnts[0], self.bind_parent)
 		cmds.parent(self.ctrl_grp, self.ctrl_parent)
 		cmds.parent(self.mod_grp, self.mod_parent)
 		cmds.setAttr( f'{top_ctrl}.{self.position_attr}', self.top_ik_position )
+		cmds.parent(self.bind_jnts[0], self.bind_parent)
+		bb.matrix_constrain(self.upper_driver, self.ctrl_grp, 'parent')
+		bb.matrix_constrain(self.upper_driver, ik_con_mod_grp, 'parent')
+		# bb.create_constrain([self.upper_driver], ik_con_mod_grp, type='parentScale' )
+		# bb.create_constrain([self.upper_driver], self.ctrl_grp, type='parentScale' )
+
+		for i, jnt in enumerate(rig_jnts):
+			#bb.create_constrain([jnt], self.bind_jnts[i])
+			bb.matrix_constrain(jnt, self.bind_jnts[i])
+			#cmds.setAttr( f'{self.bind_jnts[i]}.radius', self.scale)
+		
 		# =============== End of organize ===============
 		return
 

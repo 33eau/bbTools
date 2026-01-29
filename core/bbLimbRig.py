@@ -26,7 +26,7 @@ FK_CTRL_SHAPE = 'crossCircle'
 IK_CTRL_SHAPE = 'cube'
 IK_PV_CTRL_SHAPE = 'diamond'
 IK_END_CTRL_SHAPE = 'cube'
-SETTING_CTRL_SHAPE = 'hexagon3d'
+SETTING_CTRL_SHAPE = 'diamond'#'hexagon3d'
 RIBBON_CTRL_SHAPE = 'squareRound'
 NUM_NURB_SUBDIVISION = 8
 BIND_ELEM = 'bnd'
@@ -64,6 +64,7 @@ class LimbRig:
 				default_fkIk = 1,
 				default_ik_base = 0,
 				default_ik_end = 1,
+				is_leg = False,
 				**controller_kwargs
 				):
 		
@@ -92,6 +93,7 @@ class LimbRig:
 		self.default_fkIk =  default_fkIk
 		self.default_ik_base =  default_ik_base
 		self.default_ik_end =  default_ik_end
+		self.is_leg =  is_leg
 		self.controller_kwargs =  controller_kwargs
 	
 		if side is None :
@@ -137,29 +139,39 @@ class LimbRig:
 		self.ctrl_grp = bb.create_node('group', base, element + ['Ctrl'], number, self.side, p=self.ctrl_parent)
 		self.mod_grp = bb.create_node('group', base, element + ['Mod'], number, self.side, p=self.mod_parent)
 		jnt_grp = bb.create_node('group', base, element + ['Jnt'], number, self.side, p=self.mod_grp)
-		bb.create_constrain([self.upper_driver], self.ctrl_grp)
+		if self.upper_driver:
+			bb.create_constrain([self.upper_driver], self.ctrl_grp, 'parentScale')
+			bb.create_constrain([self.upper_driver], jnt_grp, 'parentScale')
 
-		generated_joints = bb.duplicate_joint_chain(self.joints, add_elements=['fk', 'ik', 'rig', BIND_ELEM], remove_element='tmp', ignore_jnts=[self.pole_vector_jnt, self.setting_jnt])
+		generated_joints = bb.duplicate_joint_chain(self.joints, add_elements=['fk', 'ik', 'rig', BIND_ELEM], remove_element='tmp')
 		fk_jnts = generated_joints['fk']
 		ik_jnts = generated_joints['ik']
 		rig_jnts = generated_joints['rig']
 		bind_jnts = generated_joints[BIND_ELEM]
 
 		cmds.parent(fk_jnts[0], ik_jnts[0], rig_jnts[0], jnt_grp)
-		cmds.parent(bind_jnts[0], self.bind_parent)
+		if self.bind_parent:
+			cmds.parent(bind_jnts[0], self.bind_parent)
 
 		# ————————————————————————————————————————————————————
 		##################### End Rotation #####################
 		if self.end_rotation_jnts:
-			end_generated_joints = bb.duplicate_joint_chain(self.end_rotation_jnts[1:], add_elements=['fk', 'ik', BIND_ELEM], remove_element='tmp')
+			end_generated_joints = bb.duplicate_joint_chain(self.end_rotation_jnts[1:], add_elements=['fk', 'ik', 'rig', BIND_ELEM], remove_element='tmp')
 			end_rotation_jnts = [rig_jnts[-1]] + end_generated_joints['ik']
 			end_fk_jnts = end_generated_joints['fk']
 			end_ik_jnts = end_generated_joints['ik']
+			end_rig_jnts = end_generated_joints['rig']
 			end_bnd_jnts = end_generated_joints[BIND_ELEM]
-			cmds.parent(end_bnd_jnts, bind_jnts[-1])
-			cmds.parent(end_fk_jnts, fk_jnts[-1])
+			cmds.parent(end_bnd_jnts[0], bind_jnts[-1])
+			cmds.parent(end_fk_jnts[0], fk_jnts[-1])
+			cmds.parent(end_rig_jnts[0], rig_jnts[-1])
+
+			fk_rig_jnts = fk_jnts + end_fk_jnts
+			rig_end_joints = False
 		else:
 			end_rotation_jnts = None
+			fk_rig_jnts = fk_jnts
+			rig_end_joints = True
 		# ————————————————————————————————————————————————————
 
 		ik_rig = ik.IkRig( joints = ik_jnts,
@@ -187,16 +199,18 @@ class LimbRig:
 						upper_driver = self.upper_driver,
 						default_ik_base = self.default_ik_base,
 						default_ik_end = self.default_ik_end,
+						is_leg=self.is_leg
 						)
 		ik_grps = ik_rig.mod_grp
 		self.pivot_mod_grp = ik_rig.pivot_mod_grp
 		self.ik_end_ctrl = ik_rig.ik_end_ctrl
 
 		fk_rig = fk.FKRig( 
-						joints=fk_jnts,
+						joints=fk_rig_jnts,
 						rig_name = self.rig_name,
 						element_name = 'fk',
 						side = self.side,
+						offset_names=['zro'],
 						stretch = True,
 						squash = True,
 						aim_axis = self.aim_axis,
@@ -208,7 +222,7 @@ class LimbRig:
 						scale = self.scale * 1.3,
 						rotate_order = self.rotate_order,
 						shape_rotation = self.shape_rotation,
-						rig_end_joint=True
+						rig_end_joints=rig_end_joints
 						)
 		fk_ctrls = fk_rig.ctrls	
 		fk_grps = fk_rig.grps	
@@ -216,9 +230,20 @@ class LimbRig:
 		if self.end_orient_loc:
 			bb.snap([self.end_orient_loc], fk_grps[-1][0] )
 
-		for ctrl, jnt in zip(fk_ctrls, fk_jnts):
-			bb.create_constrain([ctrl], jnt, 'pac')
+		for ctrl, jnt in zip(fk_ctrls, fk_rig_jnts):
+			bb.create_constrain([ctrl], jnt, 'parent')
 
+		bb.create_constrain([fk_rig.end_grp], fk_rig_jnts[-1], 'parentScale')
+
+		bb.create_local_world(local=self.upper_driver, 
+						world=self.world_space, 
+						target='upper', 
+						types=['rotate'], 
+						attr_name='worldOrient', 
+						ctrl=fk_ctrls[0], 
+						dv=1.0)
+
+		
 		setting_controller = bc.Controller( 
 							objects = [self.setting_jnt],
 							main_ctrl_grp = self.ctrl_grp,
@@ -234,16 +259,8 @@ class LimbRig:
 
 		bb.create_guide_curve(ctrl = setting_ctrl, target = rig_jnts[2], parent = self.ctrl_grp, curve_elem = '')
 		bb.attr_separator(ctrl=setting_ctrl)
-
-		bb.add_enum_space_switch( parent_spaces = [rig_jnts[0], rig_jnts[1], rig_jnts[2]],
-									world_space = self.world_space,
-									attr_name = 'follow',
-									spaces_name = ['world', self.parts_name[0], self.parts_name[1], self.parts_name[2]],
-									target = setting_grp,
-									ctrl = setting_ctrl,
-									type = 'point',
-									default_index = 2
-								)
+		follow_loc = bb.aim_follow(parent=rig_jnts[2], upper_parent = rig_jnts[1], target=setting_grp, aim=self.aim_axis, up=self.up_axis, attr_name = 'follow', ctrl = setting_ctrl, dv = 0)
+		cmds.parent(follow_loc, jnt_grp)
 
 		bb.fk_ik_switch(
 			parents_fk = fk_jnts,
@@ -258,14 +275,16 @@ class LimbRig:
 			default_value = self.default_fkIk
 			)
 
+		# for rig_jnt, bind_jnt in zip(rig_jnts, bind_jnts):
+		# 	bb.create_constrain([rig_jnt], bind_jnt, 'parentScale')
 		for rig_jnt, bind_jnt in zip(rig_jnts, bind_jnts):
-			bb.create_constrain([rig_jnt], bind_jnt, 'parentScale')
+			bb.matrix_constrain(rig_jnt, bind_jnt, channels=['translate', 'rotate'])
 		
 		if self.end_rotation_jnts:
 			bb.fk_ik_switch(
 						parents_fk = end_fk_jnts,
 						parents_ik = end_ik_jnts,
-						targets = end_bnd_jnts,
+						targets = end_rig_jnts,
 						attr_name = 'fkIk',
 						features = ['translation', 'rotation', 'scale'],
 						ctrl = setting_ctrl,
@@ -274,8 +293,8 @@ class LimbRig:
 						setup_name = self.rig_name,
 						default_value = self.default_fkIk
 						)
-
-			bind_jnts = bind_jnts + end_bnd_jnts
+			for jnt in self.end_rotation_jnts:
+				cmds.connectAttr(f'{self.ik_end_ctrl}.s', f'{jnt}.s')
 
 		# Ribbon Rig
 		if self.ribbon:
@@ -295,7 +314,21 @@ class LimbRig:
 							lower_bind_parent = bind_jnts[1],
 							color = 'light'+self.color.capitalize(),
 							end_orient_loc =self.end_orient_loc,
+							upper_driver = self.upper_driver,
+							global_scale = self.global_scale,
 							**self.controller_kwargs)
+			if self.upper_driver:
+				bb.create_constrain([self.upper_driver], ribbon_rig.ctrl_grp, 'parentScale')
+				bb.create_constrain([self.upper_driver], ribbon_rig.jnts_grp, 'parentScale')
+		
+		fk_jnts = fk_rig_jnts
+		if self.end_rotation_jnts:
+			rig_jnts = rig_jnts + end_rig_jnts
+			bind_jnts = bind_jnts + end_bnd_jnts
+			ik_jnts = ik_jnts + end_ik_jnts
+		
+		# for rig, bnd in zip(rig_jnts, bind_jnts):
+		# 	bb.matrix_constrain(rig, bnd)
 		
 		self.setting_ctrl = setting_ctrl
 		self.bind_jnts = bind_jnts
@@ -425,6 +458,10 @@ class LimbRig:
 		cmds.delete(self.pivot_mod_grp, constraints=True)
 		bb.create_constrain([toe_ik_ctrl], toe_ikh)
 		bb.create_constrain([piv_grp], self.pivot_mod_grp)
+		bb.create_constrain([toe_ik_ctrl], foot_ik_jnts[0], 'scale')
+
+		cmds.connectAttr(f'{self.ik_end_ctrl}.s', f'{self.ik_jnts[-1]}.s')
+		
 		# ————————————————————————————————————————————————————
 		##################### Foot SDKs #####################
 
@@ -505,7 +542,8 @@ class LimbRig:
 					bb.set_driven_key(main_ctrl=self.ik_end_ctrl, attr=pose, driven=driven_full_attr, values=key_values, limit=limit)
 
 		for rig_jnt, bnd_jnt in zip(foot_rig_jnts, foot_bind_jnts):
-			bb.create_constrain([rig_jnt], bnd_jnt)
+			#bb.create_constrain([rig_jnt], bnd_jnt, 'parentScale')
+			bb.matrix_constrain(rig_jnt, bnd_jnt)
 
 		bb.fk_ik_switch(
 			parents_fk = foot_fk_jnts,

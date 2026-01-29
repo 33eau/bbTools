@@ -34,6 +34,8 @@ class RibbonRig:
 				lower_bind_parent = '',
 				color = None,
 				end_orient_loc = None,
+				upper_driver = None,
+				global_scale = None,
 				**controller_kwargs
 				):
 		
@@ -51,6 +53,8 @@ class RibbonRig:
 		self.lower_bind_parent =  lower_bind_parent
 		self.color =  color
 		self.end_orient_loc = end_orient_loc
+		self.upper_driver =  upper_driver
+		self.global_scale =  global_scale
 		self.controller_kwargs =  controller_kwargs
 
 		self.cross_vector = bb.axis_convert(aim_axis, 'cross_vector', up_axis)
@@ -67,6 +71,7 @@ class RibbonRig:
 		self.mod_grp = None
 		self.bind_jnts = None
 		self.ctrls = None
+		self.jnts_grp = None
 
 		self.build()
 		#bb.over_and_out('RibbonRig', f'{self.side}{self.rig_name}')
@@ -106,35 +111,6 @@ class RibbonRig:
 		cmds.delete(nurb_a_crv,nurb_b_crv)
 		cmds.parent(nurb, self.mod_grp)
 
-		# ————————————————————————————
-		# ========= Follicle =========
-		subdivision = cmds.getAttr(f'{nurb}.spansUV')[0]
-		subdivision = max(subdivision)
-		nurb_shp = cmds.listRelatives(nurb, s=True)[0]
-
-		follicle_grp = bb.create_node('group', base=self.rig_name, elements=['follicle'], side=self.side, p = self.mod_grp)
-		cmds.hide(follicle_grp)
-		self.bind_jnts = []
-		for i in range(0, subdivision):
-			u_position = ((1/subdivision) * i) + (1/(subdivision*2))
-			follicle = bb.create_node('follicle', self.rig_name, [self.feature_name], number = f'{i+1:02d}', side = self.side)
-			follicle_shp = cmds.listRelatives(follicle, s=True)[0]
-			cmds.connectAttr(f'{nurb_shp}.local', f'{follicle_shp}.inputSurface')
-			cmds.connectAttr(f'{nurb_shp}.worldMatrix[0]', f'{follicle_shp}.inputWorldMatrix')
-			cmds.connectAttr(f'{follicle_shp}.ot', f'{follicle}.t')
-			cmds.connectAttr(f'{follicle_shp}.or', f'{follicle}.r')
-			cmds.setAttr( f'{follicle_shp}.parameterU', u_position)
-			cmds.setAttr( f'{follicle_shp}.parameterV', 0.5)
-			cmds.parent(follicle, follicle_grp)
-			bind_jnt = bb.create_node('joint', self.rig_name, [self.feature_name, 'bnd'], f'{i+1:02d}', self.side)
-			bb.create_constrain([follicle], bind_jnt, type = 'parent', maintain_offset=False)
-			if self.upper_bind_parent:
-				if i < (subdivision)/2:
-					cmds.parent(bind_jnt, self.upper_bind_parent)
-				else:
-					cmds.parent(bind_jnt, self.lower_bind_parent)
-				self.bind_jnts.append(bind_jnt)
-		
 		# —————————————————————————————————————————————
 		# ========= Create Ribbon Controllers =========
 		up_posi = bb.get_center_position(self.joints[:2])
@@ -183,6 +159,57 @@ class RibbonRig:
 		self.mid_ctrl = mid_controller.ctrls[0]
 		mid_grp = mid_controller.offset_grps[0][0]
 
+		# ————————————————————————————
+		# ========= Follicle =========
+		subdivision = cmds.getAttr(f'{nurb}.spansUV')[0]
+		subdivision = max(subdivision)
+		nurb_shp = cmds.listRelatives(nurb, s=True)[0]
+
+		follicle_grp = bb.create_node('group', base=self.rig_name, elements=['follicle'], side=self.side, p = self.mod_grp)
+		cmds.hide(follicle_grp)
+		self.bind_jnts = []
+		half_length = (subdivision)/2
+		for i in range(0, subdivision):
+			u_position = ((1/subdivision) * i) + (1/(subdivision*2))
+			follicle = bb.create_node('follicle', self.rig_name, [self.feature_name], number = f'{i+1:02d}', side = self.side)
+			follicle_shp = cmds.listRelatives(follicle, s=True)[0]
+			cmds.connectAttr(f'{nurb_shp}.local', f'{follicle_shp}.inputSurface')
+			cmds.connectAttr(f'{nurb_shp}.worldMatrix[0]', f'{follicle_shp}.inputWorldMatrix')
+			cmds.connectAttr(f'{follicle_shp}.ot', f'{follicle}.t')
+			cmds.connectAttr(f'{follicle_shp}.or', f'{follicle}.r')
+			cmds.setAttr( f'{follicle_shp}.parameterU', u_position)
+			cmds.setAttr( f'{follicle_shp}.parameterV', 0.5)
+			cmds.parent(follicle, follicle_grp)
+			bind_jnt = bb.create_node('joint', self.rig_name, [self.feature_name, 'bnd'], f'{i+1:02d}', self.side)
+			cmds.matchTransform(bind_jnt, follicle)
+			#bb.create_constrain([follicle], bind_jnt, type = 'parent', maintain_offset=True)
+			if self.upper_bind_parent:
+				if i < half_length:
+					cmds.parent(bind_jnt, self.upper_bind_parent)
+				else:
+					cmds.parent(bind_jnt, self.lower_bind_parent)
+				self.bind_jnts.append(bind_jnt)
+			
+			if i < half_length -1:
+				scale_ctrl = self.up_ctrl
+			elif i > half_length + 1:
+				scale_ctrl = self.lo_ctrl
+			else:
+				scale_ctrl = self.mid_ctrl
+
+			#cmds.connectAttr(f'{scale_ctrl}.s',  f'{follicle}.s')
+			scale_base, scale_element, scale_number, scale_side, suffix = NAMER.extract(scale_ctrl)
+			node_name = NAMER.format(scale_base, scale_element, scale_number, scale_side, 'mmt')
+			if not cmds.objExists(node_name):
+				scale_mmt = bb.create_node('multMatrix', scale_base, scale_element + ['scale'], scale_number, scale_side)
+				scale_dcm = bb.create_node('decomposeMatrix', scale_base, scale_element + ['scale'], scale_number, scale_side)
+			
+			cmds.connectAttr(f'{scale_ctrl}.worldMatrix[0]', f'{scale_mmt}.matrixIn[0]')
+			cmds.connectAttr(f'{scale_mmt}.matrixSum', f'{scale_dcm}.inputMatrix')
+			cmds.connectAttr(f'{scale_dcm}.outputScale', f'{follicle}.s')
+
+			bb.matrix_constrain(follicle, bind_jnt)
+		
 		# —————————————————————————————————————
 		# ========= Parent Inverse Mtx =========
 		bb.create_constrain([self.joints[1]], mid_grp, type = 'point')
@@ -194,11 +221,11 @@ class RibbonRig:
 		cmds.connectAttr(f'{self.mid_ctrl}.parentInverseMatrix[0]', f'{mid_up_orc}.constraintParentInverseMatrix', f=True)
 		cmds.connectAttr(f'{self.mid_ctrl}.parentInverseMatrix[0]', f'{mid_lo_orc}.constraintParentInverseMatrix', f=True)
 
-		i = 1
-		for jnt in self.bind_jnts:
-			parent_jnt = self.joints[0] if i <= 5 else self.joints[1]
-			cmds.connectAttr(f'{parent_jnt}.s', f'{jnt}.s')
-			i += 1
+		# i = 1
+		# for jnt in self.bind_jnts:
+		# 	parent_jnt = self.joints[0] if i <= 5 else self.joints[1]
+		# 	cmds.connectAttr(f'{parent_jnt}.s', f'{jnt}.s')
+		# 	i += 1
 		
 		# —————————————————————————
 		# ========= Twist =========
@@ -220,7 +247,7 @@ class RibbonRig:
 		no_twist_grp= no_twist_grp[no_twist_jnt]
 		bb.snap(parents=[self.joints[0]], target=no_twist_grp[0])
 		bb.create_constrain([self.joints[0]], no_twist_grp[0], type='point')
-		cmds.aimConstraint(self.joints[1], no_twist_grp[1], aimVector=aim_axis_vector, upVector=cross_axis_vector, worldUpType= 'None', mo = True)
+		cmds.aimConstraint(self.joints[1], no_twist_grp[1], aimVector=aim_axis_vector, upVector=up_axis_vector, worldUpType= 'objectrotation', mo = True, wuo = self.upper_driver, wu = up_axis_vector)
 
 		# ————————————————————————————
 		# ========= Organize =========
@@ -241,6 +268,7 @@ class RibbonRig:
 		cmds.parent(up_joint, lo_joint, mid_jnts_grp, twist_grp[0], no_twist_grp[0], ribbon_jnt_grp)
 
 		self.ctrls = [self.up_ctrl, self.mid_ctrl, self.lo_ctrl]
+		self.jnts_grp = ribbon_jnt_grp
 
 
 ## Example usage

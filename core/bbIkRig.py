@@ -43,9 +43,11 @@ class IkRig:
 				mod_parent = None,
 				upper_driver = None,
 				default_ik_base = 0,
-				default_ik_pv = 1,
+				default_ik_pv = 0,
 				default_ik_end = 0,
 				base_parent_type = 'orient',
+				end_stretch = False,
+				is_leg = False,
 				**controller_kwargs
 				):
 		self.joints =  joints
@@ -76,6 +78,8 @@ class IkRig:
 		self.default_ik_pv =  default_ik_pv
 		self.default_ik_end =  default_ik_end
 		self.base_parent_type =  base_parent_type
+		self.end_stretch =  end_stretch
+		self.is_leg =  is_leg
 
 		self.number = parser.find_number(self.rig_name)
 		if side is None :
@@ -91,6 +95,8 @@ class IkRig:
 		#bb.over_and_out('IkRig', self.rig_name)
 
 	def _build(self):
+		self.aim_attr = bb.axis_convert(self.aim_axis, 'absolute_letter')
+		up_attr = bb.axis_convert(self.up_axis, 'absolute_letter')
 		base_names =[]
 		joint_positions = []
 		for jnt in self.joints:
@@ -128,8 +134,6 @@ class IkRig:
 		self.ik_base_ctrl = ik_base_controller.ctrls[0]
 		ik_base_grp = ik_base_controller.offset_grps[0]
 
-		bb.add_enum_space_switch( [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_base_grp[0], ctrl= self.ik_base_ctrl, type = self.base_parent_type, default_index=self.default_ik_base)	
-
 		ikh_end_controller = bc.Controller(objects = [ikh],
 					name=self.rig_name+'_ik',
 					side = self.side,
@@ -147,10 +151,17 @@ class IkRig:
 		self.ik_end_ctrl = ikh_end_controller.ctrls[0]
 		ik_end_grps = ikh_end_controller.offset_grps[0]
 
+		if self.is_leg:
+			format_side = parser.format_side(self.side, 'upper')
+			if format_side == 'R':
+				inv_axes = [self.aim_attr, up_attr]
+				for ax in inv_axes:
+					cmds.setAttr(f'{ik_end_grps[-1]}.s{ax}', -1)
+
 		# ————————————————————————————————————————————————————
 		##################### Base Orient #####################
 		if self.base_orient_loc is None:
-			base_orient_loc = bb.create_node('locator', self.rig_name, ['end', 'orient'], None, self.side)
+			base_orient_loc = bb.create_node('locator', self.rig_name, ['base', 'orient'], None, self.side)
 			bb.snap([self.joints[0]], base_orient_loc)
 			bb.snap([base_orient_loc], ik_base_grp[0])
 			cmds.delete(base_orient_loc)
@@ -167,6 +178,7 @@ class IkRig:
 			bb.snap([self.end_orient_loc], ik_end_grps[0])
 		# ————————————————————————————————————————————————————
 
+		bb.add_enum_space_switch( [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_base_grp[0], ctrl= self.ik_base_ctrl, type = self.base_parent_type, default_index=self.default_ik_base)	
 		bb.add_enum_space_switch(parent_spaces = [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_end_grps[1], ctrl=self.ik_end_ctrl, type = 'parent', default_index= self.default_ik_end)
 		#bb.create_constrain([self.ik_end_ctrl], ikh, 'point')
 		node_name = NAMER.format(self.rig_name, ['pv'], self.number, self.side, 'loc')
@@ -185,13 +197,16 @@ class IkRig:
 					cmds.parent(end_rot_ikh, end_rot_ikhs[-1])
 				else:
 					bb.create_constrain([self.ik_end_ctrl], end_rot_ikh, 'parent')
-					cmds.parent(end_rot_ikh, self.mod_grp)
+					# cmds.parent(end_rot_ikh, self.mod_grp)
+					cmds.parent(end_rot_ikh, ikh)
+			cmds.connectAttr(f'{self.ik_end_ctrl}.s', f'{self.joints[-1]}.s')
+
 		# ————————————————————————————————————————————————————
 
 		ik_pv_controller = bc.Controller(objects = [self.pole_vector_jnt],
 								offset_names = ['zro', 'space', 'Offset'],
 								main_ctrl_grp = self.ctrl_grp,
-								shape = 'diamond',
+								shape = 'locator',
 								color = self.color,
 								connection_type = 'None',
 								rotate_order = 'xyz',
@@ -207,7 +222,10 @@ class IkRig:
 		node_name = NAMER.format(self.rig_name, ['pv'], self.number, self.side, 'pvc')
 		cmds.poleVectorConstraint(self.ik_pv_ctrl, ikh, n=node_name)
 		bb.create_guide_curve(self.ik_pv_ctrl, self.joints[1], parent=self.ctrl_grp, curve_elem='pv')
-		bb.add_enum_space_switch( [self.ik_base_ctrl, self.ik_end_ctrl] , world_space=self.world_space, attr_name='follow', spaces_name=['world', 'base', 'end'], target = self.ik_pv_grp[0][1], ctrl= self.ik_pv_ctrl, type = 'parent', default_index=self.default_ik_pv)	
+		bb.attr_separator(ctrl=self.ik_pv_ctrl)
+		follow_loc = bb.aim_follow(parent=self.ik_end_ctrl, upper_parent = self.ik_base_ctrl, target=self.ik_pv_grp[0][1], aim=self.aim_axis, up=self.up_axis, attr_name = 'follow', ctrl = self.ik_pv_ctrl, dv = 0)
+		cmds.parent(follow_loc, self.mod_grp)
+		bb.matrix_constrain(self.ik_base_ctrl, follow_loc, type='parent', store_orig = False, channels = ['translate', 'scale'])
 		self.ctrls = [self.ik_base_ctrl, self.ik_pv_ctrl, self.ik_end_ctrl]
 
 		if self.stretch:
@@ -215,10 +233,11 @@ class IkRig:
 		
 	def do_strech(self):
 		ctrls = [self.ik_base_ctrl, self.ik_end_ctrl]
+		jnts = [self.joints[0], self.joints[-1]]
 		position_locators = []
 		for i, point in enumerate(['start', 'end']):
 			loc = bb.create_node( node_type='locator', base=self.rig_name, elements=[self.stretch_attr, point], number=self.number, side=self.side, namer=NAMER)
-			cmds.matchTransform(loc, ctrls[i])
+			cmds.matchTransform(loc, jnts[i])
 			cmds.hide(loc)
 			position_locators.append(loc)
 
@@ -233,21 +252,19 @@ class IkRig:
 		cmds.connectAttr(f'{base_loc}.worldPosition[0]',  f'{real_time_distant_dbt}.p1')
 		cmds.connectAttr(f'{end_loc}.worldPosition[0]',  f'{real_time_distant_dbt}.p2')
 
-		aim_attr = bb.axis_convert(self.aim_axis, 'absolute_letter')
 		total_len = 0
 		for jnt in self.joints[1:]:
-			jnt_len = cmds.getAttr(f'{jnt}.t{aim_attr}')
+			jnt_len = cmds.getAttr(f'{jnt}.t{self.aim_attr}')
 			total_len += abs(jnt_len)
 
-		global_scale_mdl = bb.create_node('multDoubleLinear', self.rig_name, ['global', 'scale'], self.number, self.side)
-		cmds.setAttr( f'{global_scale_mdl}.i1', total_len )
-		cmds.connectAttr(self.global_scale, f'{global_scale_mdl}.i2')
-		for ax in 'xyz':
-			cmds.connectAttr(self.global_scale, f'{self.ctrl_grp}.s{ax}')
+		global_scale_mdv = bb.create_node('multiplyDivide', self.rig_name, ['global', 'scale'], self.number, self.side)
+		cmds.connectAttr(f'{real_time_distant_dbt}.distance', f'{global_scale_mdv}.i1x')
+		cmds.connectAttr(self.global_scale, f'{global_scale_mdv}.i2x')
+		cmds.setAttr(f'{global_scale_mdv}.op', 2 )
 
 		dist_perc_mdv = bb.create_node( node_type='multiplyDivide', base=self.rig_name, elements=['dist', 'perc'], number=self.number, side=self.side, namer=NAMER)
-		cmds.connectAttr(f'{real_time_distant_dbt}.distance', f'{dist_perc_mdv}.i1x')
-		cmds.connectAttr(f'{global_scale_mdl}.o', f'{dist_perc_mdv}.i2x')
+		cmds.connectAttr(f'{global_scale_mdv}.ox', f'{dist_perc_mdv}.i1x')
+		cmds.setAttr( f'{dist_perc_mdv}.i2x', total_len )
 		cmds.setAttr(f'{dist_perc_mdv}.op', 2 )
 
 		attr_name = 'auto' + self.stretch_attr.capitalize()
@@ -256,33 +273,35 @@ class IkRig:
 		cmds.addAttr( self.ik_end_ctrl, ln = attr_name, at = 'double', min = 0, max = 1, dv = 1, k = True )
 		cmds.addAttr( self.ik_end_ctrl, ln = mannual_attr, at = 'float', min = -1, max = 10, dv = 1, k = True )
 
+		mannual_mdl = bb.create_node( node_type='multDoubleLinear', base=self.rig_name, elements=[mannual_attr], number=self.number, side=self.side, namer=NAMER)
+		cmds.connectAttr(f'{dist_perc_mdv}.ox', f'{mannual_mdl}.i1')
+		cmds.connectAttr(f'{self.ik_end_ctrl}.{mannual_attr}', f'{mannual_mdl}.i2')
+
 		feature_switch = bb.create_node( node_type='blendColors', base=self.rig_name, elements=[self.stretch_attr], number=self.number, side=self.side, namer=NAMER)
 		cmds.connectAttr(f'{self.ik_end_ctrl}.{attr_name}', f'{feature_switch}.blender')
-		cmds.connectAttr(f'{dist_perc_mdv}.ox', f'{feature_switch}.c1r')
+		cmds.connectAttr(f'{mannual_mdl}.o', f'{feature_switch}.c1r')
 		cmds.setAttr( f'{feature_switch}.c2', 1,1,1 )
 
-		mannual_mdl = bb.create_node( node_type='multDoubleLinear', base=self.rig_name, elements=[self.stretch_attr], number=self.number, side=self.side, namer=NAMER)
-		cmds.connectAttr(f'{self.ik_end_ctrl}.{mannual_attr}', f'{mannual_mdl}.i2')
-		cmds.connectAttr(f'{feature_switch}.opr', f'{mannual_mdl}.i1')
-
 		bend_cdt = bb.create_node( node_type='condition', base=self.rig_name, elements=[self.stretch_attr], number=self.number, side=self.side, namer=NAMER)
-		cmds.connectAttr(f'{real_time_distant_dbt}.distance', f'{bend_cdt}.ft')
-		cmds.connectAttr(f'{global_scale_mdl}.o', f'{bend_cdt}.st')
+		cmds.connectAttr(f'{global_scale_mdv}.ox', f'{bend_cdt}.ft')
+		cmds.setAttr(f'{bend_cdt}.st', total_len )
 		cmds.setAttr(f'{bend_cdt}.op', 2 )
-		cmds.connectAttr(f'{mannual_mdl}.o', f'{bend_cdt}.ctr')
+		cmds.connectAttr(f'{feature_switch}.opr', f'{bend_cdt}.ctr')
 		cmds.connectAttr(f'{self.ik_end_ctrl}.{mannual_attr}', f'{bend_cdt}.cfr')
+		
 
 		for jnt in self.joints[1:]:
 			base_name = parser.get_base_name(jnt)
-			original_posi = cmds.getAttr(f'{jnt}.t{aim_attr}')
+			original_posi = cmds.getAttr(f'{jnt}.t{self.aim_attr}')
 			original_posi_mdl = bb.create_node(node_type='multDoubleLinear', base=base_name, elements=[self.stretch_attr], number=self.number, side=self.side)
 			cmds.setAttr( f'{original_posi_mdl}.i1', original_posi)
 			cmds.connectAttr(f'{bend_cdt}.ocr', f'{original_posi_mdl}.i2')
-			joint_global_scale_mdl = bb.create_node('multDoubleLinear', base_name, ['global', 'scale'], self.number, self.side)
-			cmds.connectAttr(f'{original_posi_mdl}.o', f'{joint_global_scale_mdl}.i1')
-			cmds.connectAttr(f'{self.global_scale}', f'{joint_global_scale_mdl}.i2')
-			cmds.connectAttr(f'{joint_global_scale_mdl}.o', f'{jnt}.t{aim_attr}')
-
+			# joint_global_scale_mdl = bb.create_node('multDoubleLinear', base_name, ['global', 'scale'], self.number, self.side)
+			# cmds.connectAttr(f'{original_posi_mdl}.o', f'{joint_global_scale_mdl}.i1')
+			# cmds.connectAttr(f'{self.global_scale}', f'{joint_global_scale_mdl}.i2')
+			#cmds.connectAttr(f'{joint_global_scale_mdl}.o', f'{jnt}.t{self.aim_attr}')
+			cmds.connectAttr(f'{original_posi_mdl}.o', f'{jnt}.t{self.aim_attr}')
+		
 		if self.squash:
 			power_mdv = bb.create_node( node_type='multiplyDivide', base=self.rig_name, elements=[self.squash_attr, 'power'], number=self.number, side=self.side, namer=NAMER)
 			cmds.setAttr(f'{power_mdv}.op', 3 )
@@ -306,8 +325,10 @@ class IkRig:
 			cmds.setAttr( f'{sq_switch}.c2r', 1)
 			cmds.setAttr( f'{sq_switch}.c2', 1,1,1 )
 
+			squash_jnts = self.joints if self.end_stretch else self.joints[:-1]
 			scale_axes = 'xyz'.replace(self.aim_axis, '')
-			for jnt in self.joints:
+
+			for jnt in squash_jnts:
 				for ax in scale_axes: 
 					cmds.connectAttr(f'{sq_switch}.opr', f'{jnt}.s{ax}')
 
@@ -342,14 +363,37 @@ class IkRig:
 		lock_perc_mdv = bb.create_node('multiplyDivide', self.rig_name, [feature_lock], self.number, self.side)
 		cmds.setAttr(f'{lock_perc_mdv}.op', 2 )
 
+		global_scale_lock_mdv = bb.create_node('multiplyDivide', self.rig_name, ['lock', 'global', 'scale'], None, self.side)
+		global_scale_perc_lock_mdv = bb.create_node('multiplyDivide', self.rig_name, ['lock', 'scale', 'perc'], None, self.side)
+		cmds.setAttr(f'{global_scale_perc_lock_mdv}.op', 2 )
 		for i, channel in enumerate('xy'):
-			distance_abs = bb.create_node('absolute', self.rig_name, [point_names[i+1], 'abs'], self.number, self.side)
-			cmds.connectAttr(f'{distance_nodes[i]}.distance', f'{distance_abs}.i')
-			cmds.connectAttr(f'{distance_abs}.o', f'{lock_perc_mdv}.i2{channel}')
+			temp_upper_loc = bb.create_node('locator', 'temp', ['upper'], None, self.side)
+			temp_lower_loc = bb.create_node('locator', 'temp', ['lower'], None, self.side)
+			cmds.matchTransform(temp_upper_loc, self.joints[i])
+			cmds.matchTransform(temp_lower_loc, self.joints[i+1])
 
-			cmds.connectAttr(f'{distance_nodes[i]}.distance', f'{lock_perc_mdv}.i1{channel}')
-			cmds.connectAttr(f'{lock_perc_mdv}.o{channel}', f'{lock_switch_bcl}.c1{lock_channels[i]}')
-			cmds.connectAttr(f'{lock_switch_bcl}.op{lock_channels[i]}', f'{self.joints[i]}.s{aim_attr}', f=True)
+			part_len_dtb = bb.create_node('distanceBetween', 'temp', [point_names[i+1]], None, self.side)
+			cmds.connectAttr(f'{temp_upper_loc}.worldPosition[0]', f'{part_len_dtb}.point1')
+			cmds.connectAttr(f'{temp_lower_loc}.worldPosition[0]', f'{part_len_dtb}.point2')
+			part_len = cmds.getAttr(f'{part_len_dtb}.distance')
+
+			cmds.connectAttr(self.global_scale, f'{global_scale_lock_mdv}.i1{channel}')
+			cmds.setAttr( f'{global_scale_lock_mdv}.i2{channel}', part_len)
+
+			cmds.connectAttr(f'{distance_nodes[i]}.distance', f'{global_scale_perc_lock_mdv}.i1{channel}')
+			cmds.connectAttr(f'{global_scale_lock_mdv}.o{channel}', f'{global_scale_perc_lock_mdv}.i2{channel}')
+			
+			cmds.connectAttr(f'{global_scale_perc_lock_mdv}.o{channel}', f'{lock_switch_bcl}.c1{lock_channels[i]}')
+			cmds.connectAttr(f'{lock_switch_bcl}.op{lock_channels[i]}', f'{self.joints[i]}.s{self.aim_attr}', f=True)
+			cmds.delete(part_len_dtb, temp_upper_loc, temp_lower_loc)
+
+			# distance_abs = bb.create_node('absolute', self.rig_name, [point_names[i+1], 'abs'], self.number, self.side)
+			# cmds.connectAttr(f'{distance_nodes[i]}.distance', f'{distance_abs}.i')
+			# cmds.connectAttr(f'{distance_abs}.o', f'{lock_perc_mdv}.i2{channel}')
+
+			# cmds.connectAttr(f'{distance_nodes[i]}.distance', f'{lock_perc_mdv}.i1{channel}')
+			# cmds.connectAttr(f'{lock_perc_mdv}.o{channel}', f'{lock_switch_bcl}.c1{lock_channels[i]}')
+			# cmds.connectAttr(f'{lock_switch_bcl}.op{lock_channels[i]}', f'{self.joints[i]}.s{self.aim_attr}', f=True)
 	
 		for i, ctrl in enumerate(self.ctrls):
 			bb.create_constrain([ctrl], point_locs[i], type='pac', maintain_offset=False)
