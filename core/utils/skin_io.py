@@ -25,14 +25,16 @@ def export_skinweight(dir_path = None, log = False):
 	time_end = time.time()
 	time_elapsed = time_end - start_time	
 
-	print(f' 🚀 EXPORT SkinWeight: {len(objects)} object(s). At {dir_path}')
-	print(f'Total time {time_elapsed}')
 	cmds.select(cl=True)
+	print(f'Total time {time_elapsed}')
+	print(f'Exported to {dir_path}')
+	sum_text =  f'🚀 EXPORT SkinWeight: {len(objects)} object(s)'
+	cmds.confirmDialog( title = 'import skinweight', m =  sum_text)  
 
 	return True
 
 
-def import_skinweight(objects=None, dir_path = None, log = False, search_for=None, replace_with=None, prefix=None, name_space=None):
+def import_skinweight(objects=None, dir_path = None, log = False, search_for=None, replace_with=None, prefix=None, name_space=None, prompt = True):
 	skin_io = SkinClusterData()
 	if objects is None:
 		objects = cmds.ls(sl=True)
@@ -47,10 +49,15 @@ def import_skinweight(objects=None, dir_path = None, log = False, search_for=Non
 
 	time_end = time.time()
 	time_elapsed = time_end - start_time	
+	cmds.select(cl=True)
 	if importted:
-		print(f' ✨ IMPORT SkinWeight: {len(objects)} object(s).')
+		sum_text = f' ✨ IMPORT SkinWeight: {len(objects)} object(s).'
+	else:
+		sum_text = 'Please check Script Editor.'
 	print(f'Total time {time_elapsed}')
-	cmds.select(objects)
+	print(f'Import fromt {dir_path}')
+	if prompt:
+		cmds.confirmDialog( title = 'import skinweight', m =  sum_text)  
 
 	return True
 
@@ -318,8 +325,20 @@ class SkinClusterData(object):
 		
 		skinned = sk.get_skin_cluster_name(node)
 		if skinned:
-			sk.unbind_skin(obj=node)
-		
+			has_blendShape = False
+			history = cmds.listHistory(node, lv=3)
+			for h_node in history:
+				if cmds.objectType(h_node) == 'blendShape':
+					has_blendShape = True
+			if has_blendShape:
+				cmds.skinCluster(node, edit=True, unbind=True)
+			else:
+				sk.unbind_skin(obj=node)
+
+		# node = 'body_local_ply'
+		# skinned = sk.get_skin_cluster_name(node)
+		# cmds.skinCluster(node, edit=True, unbind=True)
+
 		# time start
 		start_time = time.time()
 		data = np.load(file_path, allow_pickle = True)
@@ -362,8 +381,8 @@ class SkinClusterData(object):
 				inf = cmds.joint(n=inf)
 			self.influence_names[i] = inf
 
-
 		new_skin_cluster = f'skinCluster_{node}'
+		#new_skin_cluster = sk.bind_skin(self.influence_names.tolist(), node, n=new_skin_cluster)
 		new_skin_cluster = cmds.skinCluster(self.influence_names.tolist(), node, n=new_skin_cluster, tsb=True)[0]
 
 		time_start = time.time()

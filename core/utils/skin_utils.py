@@ -341,6 +341,25 @@ def mirror_skinweight():
 	cmds.copySkinWeights(ss=skin_cluster, ds=skin_cluster, mirrorMode='YZ', surfaceAssociation='closestPoint', influenceAssociation='oneToOne')
 	print(f'Mirrored {skin_cluster} completed')
 
+def copy_skin():
+	selection = cmds.ls(sl=True)
+	source = selection[-1]
+	targets = selection[:-1]
+
+	source_skc= get_skin_cluster_name(source)[0]
+	infs = cmds.skinCluster(source_skc, inf=True, q=True)
+
+	for tgt in targets:
+		target_skc = get_skin_cluster_name(tgt)
+		if target_skc:
+			target_skc = target_skc[0]
+			try:
+				cmds.skinCluster(target_skc, ai=infs, e=True, dr=2, lw=True, wt=0)
+			except:pass
+		else:
+			target_skc = bind_skin(infs, tgt)
+		cmds.copySkinWeights(ss=source_skc, ds=target_skc, noMirror=True, surfaceAssociation='closestPoint', influenceAssociation='oneToOne')
+	cmds.select(cl=True)
 
 
 
