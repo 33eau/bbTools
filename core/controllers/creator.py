@@ -3,7 +3,7 @@ from importlib import reload
 import maya.cmds as cmds # type: ignore
 import maya.mel as mel
 import numpy as np
-from . import shape_library
+# from . import shape_library
 from . import shape_color 
 
 from ..utils import rig_utils as bb
@@ -15,11 +15,16 @@ from ..naming import current_project
 
 reload(bb)
 reload(io)
-reload(shape_library)
+#reload(shape_library)
 reload(constants)
 reload(naming)
 reload(parser)
 reload(current_project)
+
+
+SHAPES_PATH = r'W:\RIG\LIB\bbTools\core\controllers'
+SHAPE_FILE = 'shape_library.py'
+shapes = io.import_data('shape_library.py', None, SHAPES_PATH)
 
 NAME_TEMPLATE = current_project.PROJECT
 NAMER = naming.get_namer(NAME_TEMPLATE)
@@ -185,18 +190,21 @@ class Controller:
 					scale=1.0, 
 					shape_rotation=[0, 0, 0], 
 					rotate_order='zyx',
-					move = [0, 0, 0]):
+					move = [0, 0, 0],
+					close_curve = True):
 
-		points = shape_library.SHAPES.get(shape, shape_library.SHAPES['crossCircle'])
+		points = shapes.get(shape, shapes['crossCircle'])
 		crv = cmds.curve(p=points, d=1)
 		crv = cmds.rename(crv, ctrl_name)
 		shp = cmds.listRelatives(crv, s=True)[0]
-		cmds.closeCurve(shp, ch=False, ps=1, rpo=True, bb=0.5, bki=0, p=0.1)
+		if close_curve:
+			cmds.closeCurve(shp, ch=False, ps=1, rpo=True, bb=0.5, bki=0, p=0.1)
+			bb.rotate_curve(crv, rotation=shape_rotation)
+			cmds.setAttr( f'{shp}.lineWidth', line_width)
 		bb.set_color([crv], color)
 		bb.scale_shape(crv, scale)
 		bb.move_shape(crv, move)
-		bb.rotate_curve(crv, rotation=shape_rotation)
-		cmds.setAttr( f'{shp}.lineWidth', line_width)
+		
 
 		ro_value = bb.constants.ROTATE_ORDERS.get(rotate_order, 0)
 		cmds.setAttr(f'{crv}.rotateOrder', ro_value)
@@ -434,7 +442,6 @@ def mirror_ctrl(source = None, target = None, world_space = False, mirror = True
 			cmds.setAttr( f'{target_shp}.lineWidth', line_width)
 			cmds.setAttr( f'{target_shp}.overrideColorRGB', *rgb_color[0])
 
-
 def export_ctrl_shapes(ctrl_suffix='_ctl', file_name = None, world_space = False):
 	file_name = file_name if file_name else CTRL_SHAPES
 	path = io.define_path(FOLDER_NAME)
@@ -481,7 +488,23 @@ def import_ctrl_shapes(search_for=None, replace_with=None, prefix=None, suffix=N
 			pass
 	print(f'🔻 Imported {imported_len} CtrlShapes from : {path}')	
 
+def new_shape():
+	obj = cmds.ls(sl=True)[0]
+	shape = {}
+	coordinates = []
+	cv = bb.get_cv_count( obj )
 
+	for i in range( 0, cv):
+		coordinate = cmds.xform( f'{obj}Shape.cv[{i}]', ws = True, t = True, q = True )
+		coordinates.append(tuple(coordinate))
+
+	coordinates.append(coordinates[0])
+	shape[obj] = coordinates
+	io.export_data(file_name = SHAPE_FILE, data = shape, path = SHAPES_PATH, indent = 4, mode = 'append', log = True)	
+
+
+	
+		
 
 
 
