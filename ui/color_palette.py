@@ -39,12 +39,12 @@ def UI():
 
 	cmds.setParent(window_type)
 
-	cmds.gridLayout(nc = 14, nr =5, cellWidthHeight=(30, 30), p=main_layout)
+	cmds.gridLayout(nc = 15, nr =5, cellWidthHeight=(30, 30), p=main_layout)
 	for col in COLORS.keys():
 		cmds.button( label='', bgc = COLORS[col], c = partial( set_color_wrapper, col, viewport_checkBox, outliner_checkBox ), statusBarMessage = col)
 	
 	cmds.setParent(main_layout)
-	reset_type = cmds.rowLayout('resetType', nc = 2, columnWidth2=(208.25,208.25),columnAlign=(1, 'right'), columnAttach=[(1, 'both', 0), (2, 'both', 0)])
+	reset_type = cmds.rowLayout('resetType', nc = 2, columnWidth2=(223.5,223.5),columnAlign=(1, 'right'), columnAttach=[(1, 'both', 0), (2, 'both', 0)])
 	cmds.iconTextButton(style='textOnly',label = 'RESET', c= partial( reset_color_wrapper, viewport_checkBox, outliner_checkBox, reset_all=False), h = 35, fn = 'plainLabelFont', bgc=RESET_COLOR)
 	cmds.iconTextButton(style='textOnly',label = 'RESET ALL', c= partial( bb.reset_color, viewport=True, outliner=True, reset_all=True), h = 35, fn = 'boldLabelFont', bgc = RESET_ALL_COLOR)
 	
