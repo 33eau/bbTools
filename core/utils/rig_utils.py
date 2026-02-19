@@ -4,7 +4,9 @@ import maya.cmds as cmds
 import maya.mel as mel
 import maya.api.OpenMaya as om
 import numpy as np
+import re
 
+from ..controllers import creator as bc 
 from ..controllers import shape_color 
 from ..data import constants as constants
 from ..naming import namer_factory as naming 
@@ -12,6 +14,7 @@ from ..naming import parser
 from ..naming import templates
 from ..naming import current_project
 
+reload(bc)
 reload(constants)
 reload(naming)
 
@@ -34,7 +37,7 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 	suffix = templates.TYPE_SUFFIX.get(node_type)
 	if suffix is None:
 		suffix = node_type
-		print(f"Warning: No standard suffix found for node type: {node_type}. Using node_type as suffix'.")
+		print(f"Warning: No standard suffix found for node type: '{node_type}'. Using '{node_type}' as suffix'.")
 
 	node_name = NAMER.format(
 							base	 = base,
@@ -134,7 +137,7 @@ def axis_convert(axis = None, return_type = '', up_axis = None):
 		result = AXIS_MAP[formatted_axis][3]
 
 	elif return_type == 'cross_vector':
-		axis_np = constants.AXIS_NP[axis]
+		axis_np = constants.AXIS_NPelement
 		up_axis_np = constants.AXIS_NP[up_axis]
 		result = np.cross(axis_np, up_axis_np).tolist()
 
@@ -222,7 +225,7 @@ def get_cv_count(curve):
 			raise ValueError("No curve specified and nothing selected.")
 		curve = sel[0]
 
-	shape = f"{curve}Shape"
+	shape = cmds.listRelatives(curve, s=True)[0]
 	i_spans = cmds.getAttr(f"{shape}.spans")
 	i_degree = cmds.getAttr(f"{shape}.degree")
 	return int(i_spans + i_degree - 1)
@@ -233,6 +236,23 @@ def get_curve_info(curve):
 	i_spans = int(cmds.getAttr(f"{shape}.spans"))
 	i_degree = int(cmds.getAttr(f"{shape}.degree"))
 	return i_cv, i_spans, i_degree
+
+def get_nurb_info(nurb = None, num_vtx = False):
+	if cmds.objectType(nurb)=='transfrom':
+		shape = cmds.listRelatives(nurb, s=True)[0]
+	else:
+		shape = nurb
+	spans_u, spans_v = list(cmds.getAttr(f'{shape}.spansUV')[0])
+	degree_u, degree_v = list(cmds.getAttr(f'{shape}.degreeUV')[0])
+
+	num_cv_u = spans_u + degree_u
+	num_cv_v = spans_v + degree_v
+	
+	if num_vtx:
+		num_vtx = num_cv_u * num_cv_v
+		return num_vtx
+		
+	return num_cv_u, num_cv_v
 
 def rebuild_curve_to_match(source, target):
 	_, i_span, i_degree = get_curve_info(source)
@@ -370,6 +390,68 @@ def create_constrain( parents=[], target=None, type="pac", maintain_offset=True)
 	raise ValueError(f"Invalid constraint type: {type}")
 
 # -------------------------------------------------------------------
+# BSH tools
+# -------------------------------------------------------------------
+
+def inverse_blendshape_weight(bsh_node = None, target_index = 'weight[1]', geo_index = 0, just_log=False):
+	target = cmds.listAttr(f'{bsh_node}.{target_index}', m=True)[0]
+	if just_log:
+		print(f'{bsh_node} : {target}')
+		return
+	base_object = cmds.blendShape(bsh_node, query=True, geometry=True)[0]
+	
+	geo_type = cmds.objectType(base_object)
+	
+	if geo_type == 'nurbsSurface':
+		num_vtx = get_nurb_info(base_object, num_vtx=True)
+	elif geo_type == 'mesh':
+		num_vtx = cmds.polyEvaluate(base_object, vertex=True)
+	else:
+		print('Dunno the type of selected obj. Function accepts only a NURBS or a MESH')
+		return False
+	target_int = re.findall(r'\d+', target_index)[0]
+	for i in range(0, num_vtx):
+		attr_path = f'{bsh_node}.inputTarget[{geo_index}].inputTargetGroup[{target_int}].targetWeights[{i}]'
+		current_value = cmds.getAttr(attr_path)
+		new_value = 1 - current_value
+		cmds.setAttr(attr_path, new_value)
+		
+	mel.eval("ArtPaintBlendShapeWeightsToolOptions;")
+	print(f"Done: Inverted '{target}' weights on {bsh_node}")
+			
+
+def inverse_after_duplicate(bsh_node = 'blendshape__face_local'):
+	targets = cmds.aliasAttr(f'{bsh_node}.w[]', q=True)
+	for target in targets:
+		if target.endswith('_Copy'):
+			copied_index = targets.index(target) + 1
+		
+	new_target_index = targets[copied_index]
+	copied_name = cmds.listAttr(f'{bsh_node}.{new_target_index}', m=True)[0]
+	source_name = copied_name.replace('_Copy', '')
+	base, element, number, side, direction = NAMER.extract(source_name)
+	opp_side = 'l' if side == 'r' else 'r'
+	target_name =  NAMER.format(base, element, number, opp_side, direction)
+
+	targets = cmds.aliasAttr(f'{bsh_node}.w[]', q=True)
+	if target_name in targets:
+		print('meep')
+		old_target_index = targets.index(target_name)
+		old_target_index = targets[old_target_index+1]
+		plugged_inputs = cmds.listConnections(f'{bsh_node}.{old_target_index}', d=False, s=True)
+		for input_node in plugged_inputs:
+			cmds.disconnectAttr(f'{input_node}.o', f'{bsh_node}.{old_target_index}')
+			cmds.connectAttr(f'{input_node}.o', f'{bsh_node}.{new_target_index}')
+		cmds.aliasAttr('old_' + target_name, f'{bsh_node}.{old_target_index}')
+		cmds.removeMultiInstance(f'{bsh_node}.{old_target_index}', b=True)
+		
+	cmds.aliasAttr(target_name, f'{bsh_node}.{new_target_index}')
+	inverse_blendshape_weight(bsh_node = bsh_node, target_index = new_target_index, geo_index = 0, just_log=False)
+
+
+
+
+# -------------------------------------------------------------------
 # General tools
 # -------------------------------------------------------------------
 
@@ -383,7 +465,6 @@ def snap(parents=[], target=None, type = 'parent'):
 		parents = cmds.ls(sl=True)[:-1]
 	node = create_constrain(parents, target, type=type, maintain_offset = False)[0]
 	cmds.delete(node)
-
 
 def get_center_position(components):
 	x, y, z = [], [], []
@@ -407,18 +488,19 @@ def snap_to_component(create_joint=False ):
 	items = cmds.ls(sl=True, fl=True)
 	center_position = get_center_position(items)
 	if create_joint:
-		result = cmds.joint(n='centerPosition_jnt', rad = 0.4)
-		cmds.parent(result, world=True)
+		result = cmds.joint(rad = 0.4)
+		result = cmds.rename(result, 'center_jnt')
 	else:
-		result = cmds.spaceLocator(n='centerPosition_loc')[0]
+		result = cmds.spaceLocator()[0]
+		result = cmds.rename(result, 'center_loc')
 	cmds.xform(result, t=center_position, a=True, ws=True)
+	cmds.parent(result, world=True)
 	return result
 
-def create_offset_group(objects=None, offset_names=['Zro'], remove_elem = ['tmp']): 
+def create_offset_group(objects=None, offset_names=['Zro'], remove_elem = ['tmp'], add_type=False): 
 	objects = objects or cmds.ls(sl=True) or []
 	if not isinstance(objects, list):
 		objects = [objects]
-	
 	result = {}
 	for obj in objects:
 		obj_hierarchy = cmds.listRelatives(obj, ap=True, f=True)
@@ -428,7 +510,6 @@ def create_offset_group(objects=None, offset_names=['Zro'], remove_elem = ['tmp'
 			obj_child.remove(obj_shape)
 		except:
 			pass
-
 		base, element, number, side, suffix = NAMER.extract(obj)
 		if element:
 			for i, elem in enumerate(element):
@@ -439,21 +520,19 @@ def create_offset_group(objects=None, offset_names=['Zro'], remove_elem = ['tmp'
 						element[i] = elem
 		element = element if element else []
 		offset_groups = []
+		if add_type:
+			offset_names.insert(0, suffix)
 		for i, offset_name in enumerate(offset_names):
 			group_name = NAMER.format(base, element + [offset_name], number, side, 'grp')
 			group_name = parser.clean_name(group_name, remove_elem)
-			#new_group = create_node(node_type='group', base=base, elements=element + [offset_name], number=number, side=side)
 			new_group = cmds.group(empty=True, n = group_name)
 			snap([obj],new_group)
 			if i > 0 :
 				cmds.parent(new_group, offset_groups[-1])
 			offset_groups.append(new_group)
-
 		if obj_hierarchy:
 			cmds.parent(offset_groups[0], obj_hierarchy)
-
 		cmds.parent(obj, offset_groups[-1])
-
 		result[obj] = offset_groups
 	
 	return result
@@ -581,7 +660,8 @@ def move_shape(object, value=[]):
 		elif node_type in ['nurbsCurve', 'nurbsSurface']:
 			spans = cmds.getAttr(f'{shape}.spans')
 			#cmds.move(value[0], value[1], value[2], f'{shape}.cv[0:{spans}]', r=True, cs=False)
-			cmds.xform(f'{shape}.cv[0:{spans}]', ws=True, t=value, r=True)
+			#cmds.xform(f'{shape}.cv[0:{spans}]', ws=True, t=value, r=True)
+			cmds.move(*value, f'{shape}.cv[0:{spans}]', r=True, wd=True )
 	
 		
 		else:
@@ -746,20 +826,18 @@ def create_local_world(local=None, world=None, target=None, types=['rotate'], at
 
 # ——————————————————————————————————————————————————————————————————————
 
-def direct_connect(parents=None, targets =None):
+def direct_connect(parents=None, targets =None, channels = ['t', 'r', 's']):
 	parents = parents or cmds.ls(sl=True)[-1] 
 	targets = targets or cmds.ls(sl=True)[:-1] 
 	try:
 		if len(parents) != len(targets):
 			for target in targets:
-				cmds.connectAttr(f'{parents}.t', f'{target}.t')
-				cmds.connectAttr(f'{parents}.r', f'{target}.r')
-				cmds.connectAttr(f'{parents}.s', f'{target}.s')
+				for channel in channels:
+					cmds.connectAttr(f'{parents}.{channel}', f'{target}.{channel}')
 		else:
 			for parent, target in zip(parents, targets):
-				cmds.connectAttr(f'{parent}.t', f'{target}.t')
-				cmds.connectAttr(f'{parent}.r', f'{target}.r')
-				cmds.connectAttr(f'{parent}.s', f'{target}.s')
+				for channel in channels:
+					cmds.connectAttr(f'{parent}.{channel}', f'{target}.{channel}')
 	except Exception as e:
 		print(f'Failed to connect: {e}')
 
@@ -896,6 +974,26 @@ def fk_ik_switch(
 		rev = cmds.createNode('reverse', n = rev_name)
 		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{rev}.ix')
 		cmds.connectAttr(f'{rev}.ox', f'{fk_ctrl_grp}.v')
+
+def add_follow_attr(parents = [], target = '', attr_name = 'follow', ctrl = '', min=0, max=1, dv=0.5, multiply=False, connect_type = 'parent'):
+
+	cmds.addAttr( ctrl, ln=attr_name, at='float', min=min, max=max, dv=dv, k=True )
+	cons_node = create_constrain(parents, target, connect_type, maintain_offset=True)[0][0]
+	#cmds.setAttr(f'{cons_node}.interpType', 2)
+	output = f'{ctrl}.{attr_name}'
+
+	base, element, number, corner_side, suffix = NAMER.extract(ctrl)
+	if multiply:
+		val_mul_mdl = create_node('multDoubleLinear', base, element, number, corner_side)
+		cmds.setAttr( f'{val_mul_mdl}.i2', 0.1)
+		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{val_mul_mdl}.i1')
+		output = f'{val_mul_mdl}.o'
+
+	cmds.connectAttr(output, f'{cons_node}.{parents[1]}W1')
+
+	space_switch_rev = create_node('reverse', base, element, number, corner_side)
+	cmds.connectAttr(output, f'{space_switch_rev}.ix')
+	cmds.connectAttr(f'{space_switch_rev}.ox', f'{cons_node}.{parents[0]}W0')
 
 def create_guide_curve(ctrl = '', target = '', parent = '', curve_elem = 'guide'): #25Dec01
 	if not parent:
@@ -1045,12 +1143,10 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{space_switch_rev}.ix')
 		cmds.connectAttr(f'{space_switch_rev}.ox', f'{parent_con}.{parent_spaces[0]}W0')
 
-
 def over_and_out(module_name = '', output_name = ''):
 	cmds.select(cl=True)
 	output_name = output_name.replace('None', '')
 	print(f'Created\t{module_name}:\t\t{output_name}')
-
 
 def aim_follow(parent=None, upper_parent = None, target=None, aim='x', up='y', attr_name = None, ctrl = None, dv = 1):
 	elem_name = [attr_name] or ['follow']
@@ -1118,6 +1214,65 @@ def delete_orig():
 			if 'Orig' in shape:
 				orig_nodes.append(shape)
 	cmds.delete(orig_nodes)
+
+def create_connection(parent, target, connection_type='None'):
+	if connection_type == 'None':
+		return
+	if connection_type in ('point', 'parent', 'orient', 'scale', 'parentScale'):
+		create_constrain(parents=[parent], target=target, type=connection_type)
+	elif connection_type == 'direct':
+		direct_connect([parent], [target])
+	elif 'matrix' in connection_type:
+		mtx_type = connection_type.split('_')[-1]
+		matrix_constrain(parent, target, mtx_type)
+	else:
+		cmds.warning(f'Unknown connection type: {connection_type}')
+
+def create_xyz(objs=None, connection_type=None, scale=1, bp_jnt=False,):
+	temp_loc = False
+	if not objs:
+		if cmds.ls(sl=True):
+			objs = cmds.ls(sl=True)
+		else:
+			objs = cmds.spaceLocator(n='temp_xyz_loc')
+			temp_loc = True
+		
+	colors = ['red', 'mayaGreen', 'blue']
+	for obj in objs:
+		axis_crvs = []
+		axis_shapes = []
+		base, element, number, side, suffix = NAMER.extract(obj)
+		element = element if element else []
+		for i, axis in enumerate('xyz'):
+			crv_name = NAMER.format(base, element + [axis], number, side, 'ctrl')
+			ax_crv = bc.Controller.create_curve(ctrl_name=crv_name, 
+								shape=f'text_{axis}', 
+								color=colors[i], 
+								line_width=scale, 
+								scale=scale, 
+								close_curve = False)
+			axis_crvs.append(ax_crv)
+			shape = cmds.listRelatives(ax_crv, s=True)[0]
+			axis_shapes.append(shape)
+		crv_name = NAMER.format(base, element, number, side, 'ctrl')
+		axis_ctrl = bc.Controller.create_curve(ctrl_name=crv_name, 
+								shape='axis', 
+								color='white', 
+								line_width=scale*3.0, 
+								scale=scale*10)
+
+		cmds.parent(axis_shapes, axis_ctrl, r=True, s=True)
+		grp = create_offset_group(axis_ctrl)
+		grp = grp[axis_ctrl][0]
+		snap([obj], grp)
+		cmds.delete(axis_crvs)
+		if not bp_jnt:
+			create_connection(axis_ctrl, obj, connection_type)
+			if temp_loc:
+				cmds.delete(objs)
+			return grp, axis_ctrl
+		else:
+			return grp, axis_ctrl
 
 
 ########################################################
