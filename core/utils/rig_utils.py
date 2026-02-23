@@ -26,7 +26,7 @@ CONSTRAINT_TYPES = constants.CONSTRAINT_TYPES
 AXIS_MAP = constants.AXIS_MAP
 COLORS = shape_color.COLORS
 
-# -----------------------------------------------------------11--------
+# -------------------------------------------------------------------
 # Naming helpers, Fundamental helpers
 # -------------------------------------------------------------------
 
@@ -1196,6 +1196,7 @@ def joint_label(remove = None, remove_from_last = 2, force_on=False):
 	return None
 
 def lock_attrs(obj='', attrs = ['t', 'r', 's'], unlock = False):
+	attrs.append('v')
 	if not obj:
 		obj = cmds.ls(sl=True)[0]
 	for attr in attrs:
@@ -1260,7 +1261,7 @@ def create_xyz(objs=None, connection_type=None, scale=1, bp_jnt=False,):
 								color='white', 
 								line_width=scale*3.0, 
 								scale=scale*10)
-
+		lock_attrs(axis_ctrl, ['s'])
 		cmds.parent(axis_shapes, axis_ctrl, r=True, s=True)
 		grp = create_offset_group(axis_ctrl)
 		grp = grp[axis_ctrl][0]

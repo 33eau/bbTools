@@ -34,7 +34,8 @@ def create_bp_ctrl( bp_jnt_grp = 'blurprint_jnt_grp', rig_name = 'face'):
 	global_grp = bb.create_offset_group(global_ctrl, ['Zro'])
 	global_grp = global_grp[global_ctrl]
 	cmds.parent( global_grp, bp_ctrl_grp )
-	jnts = cmds.listRelatives(bp_jnt_grp, ad=True)
+
+	jnts = cmds.listRelatives(bp_jnt_grp, ad=True, type='joint')
 
 	for jnt in jnts:
 		parent = cmds.listRelatives(jnt, p=True)[0]
@@ -46,20 +47,39 @@ def create_bp_ctrl( bp_jnt_grp = 'blurprint_jnt_grp', rig_name = 'face'):
 		opp_jnt = NAMER.format(base, element, number, opp_side, suffix)
 
 		grp, ctrl = bb.create_xyz(objs=[jnt], connection_type = 'matrix_parent', scale=SCALE, bp_jnt=True)
+		
 		mtxcons_mmt = bb.create_node('multMatrix', base, element, number, side)
 		cmds.connectAttr(f'{ctrl}.worldMatrix[0]', f'{mtxcons_mmt}.matrixIn[0]')
 		cmds.connectAttr(f'{parent}.worldInverseMatrix[0]', f'{mtxcons_mmt}.matrixIn[1]')
 		cmds.connectAttr(f'{mtxcons_mmt}.matrixSum', f'{jnt}.offsetParentMatrix')
-		cmds.setAttr(f'{jnt}.rotate', *[0,0,0])
+
+		# ———————————————— store Orginal Values —————————————————
+		# -------- For reconnecting purpose in the future -------
+		attr_names = ['translate', 'rotate', 'jointOrient']
+
+		for attr in attr_names:
+			attr_name = 'stored' + attr.capitalize()
+			cmds.addAttr(ctrl, ln = attr_name, at='double3')
+			for ax in 'XYZ':
+				cmds.addAttr( ctrl, ln =f'{attr_name}{ax}', at = 'double', p = attr_name )
+			jnt_value = cmds.getAttr(f'{jnt}.{attr}')[0]
+			cmds.setAttr(f'{ctrl}.{attr_name}', *jnt_value)
+		# ——————————————————————————————————————————————————————
+				
 		cmds.setAttr(f'{jnt}.t', *[0,0,0])
+		cmds.setAttr(f'{jnt}.rotate', *[0,0,0])
 		cmds.setAttr(f'{jnt}.jointOrient', *[0, 0, 0])
 		
+		cmds.parent(grp, bp_ctrl_grp)
 		created_jnt.append(jnt)
 		bp_ctrls.append(ctrl)
 		bp_grps.append(grp)
 		
 		if cmds.objExists(opp_jnt):
-			mirror_attr = f'{base}Mirror'
+			attr_exists = cmds.attributeQuery('_____MIRROR', node=global_ctrl, exists=True)
+			if not attr_exists:
+				bb.attr_separator(global_ctrl, ln='MIRROR')
+			mirror_attr = base.replace('_bp', '')
 			cmds.addAttr( global_ctrl, ln = mirror_attr, at = 'enum', en = 'OFF:ON', dv=1, k = True )
 
 			opp_grp, opp_ctrl = bb.create_xyz(objs=[opp_jnt], connection_type = 'matrix_parent', scale=SCALE, bp_jnt=True)	
@@ -77,8 +97,22 @@ def create_bp_ctrl( bp_jnt_grp = 'blurprint_jnt_grp', rig_name = 'face'):
 			cmds.connectAttr(f'{jnt_dcm}.outputTranslate', f'{t_inv_mdv}.i1')
 
 			r_inv_mdv = bb.create_node('multiplyDivide', base, element + ['rInv'], number, opp_side)
-			cmds.setAttr( f'{r_inv_mdv}.i2y', -1)
+			#cmds.setAttr( f'{r_inv_mdv}.i2y', -1)
 			cmds.connectAttr(f'{jnt_dcm}.outputRotate', f'{r_inv_mdv}.i1')
+			
+			bb.attr_separator(ctrl, ln='IF_MIRROR')
+			for AX in 'XYZ':
+				cmds.addAttr( ctrl, ln = AX, at = 'enum', en = 'OFF:ON' , k = True )
+				ax = AX.lower()
+				ax_cdt = bb.create_node('condition', base, ['inv_{ax}'], number, None)
+				cmds.connectAttr(f'{ctrl}.{AX}', f'{ax_cdt}.ft')
+				cmds.setAttr( f'{ax_cdt}.st', 1)
+				cmds.setAttr( f'{ax_cdt}.colorIfTrueR', -1)
+				cmds.setAttr( f'{ax_cdt}.colorIfFalseR', 1)
+				cmds.connectAttr(f'{ax_cdt}.ocr', f'{r_inv_mdv}.i2{ax}')
+			cmds.setAttr( f'{ctrl}.Y', 1)
+			cmds.addAttr( ctrl, ln = 'dispAxis', at = 'enum', en = 'OFF:ON' , k = True )
+			cmds.connectAttr(f'{ctrl}.dispAxis', f'{opp_jnt}.displayLocalAxis')
 
 			mirror_cpm = bb.create_node('composeMatrix', base, element + ['mirror'], number, opp_side)
 			cmds.connectAttr(f'{t_inv_mdv}.o', f'{mirror_cpm}.inputTranslate')
@@ -93,6 +127,19 @@ def create_bp_ctrl( bp_jnt_grp = 'blurprint_jnt_grp', rig_name = 'face'):
 			cmds.connectAttr(f'{global_ctrl}.{mirror_attr}', f'{mirror_bmt}.target[0].weight')
 			cmds.connectAttr(f'{mirror_bmt}.outputMatrix', f'{opp_jnt}.offsetParentMatrix')
 
+			# ———————————————— store Orginal Values —————————————————
+			# -------- For reconnecting purpose in the future -------
+			attr_names = ['translate', 'rotate', 'jointOrient']
+
+			for attr in attr_names:
+				attr_name = 'stored' + attr.capitalize()
+				cmds.addAttr(opp_ctrl, ln = attr_name, at='double3')
+				for ax in 'XYZ':
+					cmds.addAttr( opp_ctrl, ln =f'{attr_name}{ax}', at = 'double', p = attr_name )
+				opp_jnt_value = cmds.getAttr(f'{opp_jnt}.{attr}')[0]
+				cmds.setAttr(f'{opp_ctrl}.{attr_name}', *opp_jnt_value)
+			# ——————————————————————————————————————————————————————
+
 			cmds.setAttr(f'{opp_jnt}.rotate', *[0,0,0])
 			cmds.setAttr(f'{opp_jnt}.t', *[0,0,0])
 			cmds.setAttr(f'{opp_jnt}.jointOrient', *[0, 0, 0])
@@ -101,6 +148,7 @@ def create_bp_ctrl( bp_jnt_grp = 'blurprint_jnt_grp', rig_name = 'face'):
 			cmds.connectAttr(f'{global_ctrl}.{mirror_attr}', f'{ctrl_vis_rev}.ix')
 			cmds.connectAttr(f'{ctrl_vis_rev}.ox', f'{opp_grp}.v')	
 
+			cmds.parent(opp_grp, bp_ctrl_grp)
 			created_jnt.append(opp_jnt)
 			bp_ctrls.append(opp_ctrl)
 			bp_grps.append(opp_grp)
@@ -117,4 +165,21 @@ def create_bp_ctrl( bp_jnt_grp = 'blurprint_jnt_grp', rig_name = 'face'):
 
 	print(f'Create bp ctrls: {rig_name}')
 	return 
+
+
+def disconnect_bp_ctrl(bp_jnt_grp, bp_ctrl_grp):
+	jnts = cmds.listRelatives(bp_jnt_grp, ad=True)
+	for jnt in jnts:
+		input_node = cmds.listConnections(jnt, source=True, destination=False)[-1]
+		output_attr = cmds.listConnections(input_node, c=True, s=True)[-2]
+		input_attr = cmds.listConnections(input_node, p=True, s=True)[-1]
+		cmds.disconnectAttr(output_attr, input_attr)
+		cmds.setAttr( f'{jnt}.displayLocalAxis', 0)
+	cmds.delete(bp_ctrl_grp)
+	print(f'Disconnect blueprint joints successfully')
+
+
+
+
+
 
