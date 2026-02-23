@@ -20,3 +20,4 @@ sandbox/
 *.swo
 *.txt
 *.ini
+core/TEST.py
