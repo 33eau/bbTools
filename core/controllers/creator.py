@@ -194,7 +194,7 @@ class Controller:
 					close_curve = True):
 
 		points = shapes.get(shape, shapes['crossCircle'])
-		crv = cmds.curve(p=points, d=1)
+		crv = cmds.curve(p=points, d=3)
 		crv = cmds.rename(crv, ctrl_name)
 		shp = cmds.listRelatives(crv, s=True)[0]
 		if close_curve:
