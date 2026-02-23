@@ -33,8 +33,6 @@ class HatRigNamer(BaseNamer):
 		formatted_side = parser.format_side(side, self.side_case)
 		mid_side = parser.format_side(side, self.side_case)
 		formatted_side = '' if mid_side == 'M' or mid_side == 'm' else mid_side
-		element_str = '_'.join(s.lower() for s in element) if element else ''
-
 		if element is not None:
 			if len(element) > 1:
 				elem_cap = [s.lower() for s in element]
