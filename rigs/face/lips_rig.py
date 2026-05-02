@@ -1,8 +1,10 @@
 from importlib import reload
 import maya.cmds as cmds
+import maya.mel as mel
 from . import base
 from . import face_config
 from ...core.utils import rig_utils as bb
+from ...core.utils import skin_utils as sk
 from ...core.naming import namer_factory as naming
 from ...core.naming import current_project
 from ...core.naming import parser
@@ -30,7 +32,8 @@ class LipRig(FaceModule):
 				nurbs = ['lip_upper_nrb', 'lip_lower_nrb'],
 				parent_ctrl_grp=None,
 				parent_mod_grp=None,
-				remove_elem='bp'
+				remove_elem='bp',
+				surface_rotation = True
 				):
 		super().__init__(name, side, parent_ctrl_grp, parent_mod_grp, remove_elem)
 		self.blueprint_grp =  blueprint_grp
@@ -40,6 +43,7 @@ class LipRig(FaceModule):
 		self.lip_jnts =  lip_jnts
 		self.corner_jnts =  corner_jnts
 		self.nurbs =  nurbs
+		self.surface_rotation =  surface_rotation
 
 		self.config = face_config.LIP_SETTINGS
 		self.follow_attr = 'follow'
@@ -49,9 +53,6 @@ class LipRig(FaceModule):
 
 	def build(self):
 		face_module = self.build_hierarchy(self.name, self.side)	
-		#cmds.parent(face_module.mod_grp, )
-		# main_jnt_grp = NAMER.format(self.name, ['main'], None, self.side, 'grp')
-		# self.jnt_grp = cmds.rename(self.jnt_grp, main_jnt_grp)
 
 		self.lip_grps = []
 		self.lip_ctrls = []
@@ -59,6 +60,8 @@ class LipRig(FaceModule):
 		self.lip_corner_grps = []
 		self.lip_corner_ctrls = []
 		self.lip_corner_jnt_grps = []
+
+		self.lip_main_jnts = []
 
 		cmds.parent(self.nurbs, self.mod_grp)
 
@@ -75,6 +78,7 @@ class LipRig(FaceModule):
 										)
 			self.lip_grps.append(lip_ctrl_grp)
 			self.lip_ctrls.append(lip_ctrl)
+			self.lip_main_jnts.append(lip_jnt)
 		
 			lip_ctrl_grp = lip_ctrl_grp[0]
 			if part == 'upper':
@@ -84,8 +88,10 @@ class LipRig(FaceModule):
 			bb.direct_connect([lip_ctrl_grp], [lip_jnt_grp])
 
 		for jnt in self.corner_jnts:
-			corner_jnt_grp, corner_jnt = self.create_rig_joint(jnt, parent_jnt_grp=self.jnt_grp, rad=0.25, offset_names=['jnt', 'jnt_' + self.follow_attr])
+			corner_jnt_grp, corner_jnt = self.create_rig_joint(jnt, parent_jnt_grp=self.jnt_grp, rad=0.25, offset_names=['jnt'])
 			self.lip_corner_jnt_grps.append(corner_jnt_grp)
+			follow_grp = bb.create_offset_group(corner_jnt, [self.follow_attr])
+			follow_grp = follow_grp[corner_jnt][0]
 
 			corner_ctrl_grp, corner_ctrl = self.create_controller(
 												corner_jnt, 
@@ -98,8 +104,7 @@ class LipRig(FaceModule):
 											)
 
 			bb.add_follow_attr(parents = self.corner_parents, target = corner_ctrl_grp[1], attr_name = self.follow_attr, ctrl = corner_ctrl, min=0, max=1, dv=0.5, multiply=False, connect_type = 'parent')
-			#bb.create_constrain([corner_ctrl_grp[1]],  corner_jnt_grp, 'pac')
-			bb.direct_connect([corner_ctrl_grp[1]],  [corner_jnt_grp[1]])
+			bb.direct_connect([corner_ctrl_grp[1]], [follow_grp])
 			self.lip_corner_grps.append(corner_ctrl_grp)
 			self.lip_corner_ctrls.append(corner_ctrl)
 
@@ -128,21 +133,21 @@ class LipRig(FaceModule):
 			local_nurb = cmds.rename(local_nurb, local_nurb_name)
 			cmds.parent(local_nurb, local_nurb_grp)
 
-			l_num = (round(subdivision/2))
-			r_num = 0
+			l_num = 0
+			r_num = (round(subdivision/2))
 			cmds.hide(follicle_grp)
 
 			for i in range(0, subdivision):
 				u_position = ((1/subdivision) * i) + (1/(subdivision*2))
-				if u_position < 0.5:
+				if u_position > 0.5:
 					sub_side = 'l'
-					l_num -= 1
+					l_num += 1
 					#scale_value = [1, 1, 1]
 					l_num = abs(l_num)
 					num = f'{l_num:02d}'
-				elif u_position > 0.5:
+				elif u_position < 0.5:
 					sub_side = 'r'
-					r_num += 1
+					r_num -= 1
 					#scale_value = [-1, 1, 1]
 					num = f'{r_num:02d}'
 				else:
@@ -180,9 +185,12 @@ class LipRig(FaceModule):
 												)
 				bb.direct_connect([follicle], [lip_rbn_ctrl_grp[0]])
 				cmds.xform(lip_rbn_ctrl_grp[1], os=True, ro=self.config[f'{part}_rotate'])
-				point_jnt_grp, point_jnt = self.create_rig_joint(bind_jnt, parent_jnt_grp=self.jnt_grp, rad=0.25, add_elem = 'point')
-				cmds.parent(point_jnt_grp, follicle_grp)
-				bb.matrix_constrain(bind_jnt, point_jnt, channels = ['translate', 'scale'])
+				if self.surface_rotation:
+					point_jnt_grp, point_jnt = self.create_rig_joint(bind_jnt, parent_jnt_grp=self.jnt_grp, rad=0.25, add_elem = 'point')
+					cmds.parent(point_jnt_grp, follicle_grp)
+					bb.matrix_constrain(bind_jnt, point_jnt, channels = ['translate', 'scale'])
+				else:
+					cmds.disconnectAttr(f'{follicle_shp}.or', f'{follicle}.r')
 
 				# Nurb Blendshape
 				local_nurb_jnts = []
@@ -218,3 +226,110 @@ class LipRig(FaceModule):
 						side_ctrl = f'{sub_side}_lip_corner_ctl'
 						bb.create_constrain([main_ctrl, side_ctrl], nurb_ctrl_grp[0], 'parent')
 
+	def lip_zip_rig(self):
+		'''
+
+		Duplicate both upper and lower nurbs
+		Copy skinweight from the main nurbs to each zipper nurb but add both upr&lwr
+		Create blendshape from local nurb Post Def
+		Add target 9 (cv) times 
+		blendShape -e  -t lip_lower_nrb 9 lip_lower_zipper_nrb 1 lip_lower_zipper_bsh;
+		weight each row 1 for each bsh target
+		create zipper attr on corner ctrl
+		
+		'''
+		fearture_name = 'zip'
+		u, v = bb.get_nurb_info(self.nurbs[0])
+		max_cv = max(u, v)
+		num_vtx = bb.get_nurb_info(self.nurbs[0], num_vtx=True)
+
+		for orig_nrb in self.nurbs:
+			nurb_name = parser.get_base_name(orig_nrb)
+			nurb_side = parser.find_element(orig_nrb, 'sides')
+			is_upper = True if 'upper' in orig_nrb else False
+			zip_nrb_name = NAMER.format(nurb_name, [fearture_name], None, nurb_side, 'nrb')
+			zip_nrb = cmds.duplicate(orig_nrb)[0]
+			zip_nrb = cmds.rename(zip_nrb, zip_nrb_name)
+			#cmds.parent(zip_nrb, self.mod_grp)
+
+			sk.copy_skin([zip_nrb, orig_nrb])
+			zip_skc = sk.get_skin_cluster_name(zip_nrb)
+
+			# ————————— Editing inf weight —————————
+			host_joint = 'lip_upper_main_jnt' if is_upper else 'lip_lower_main_jnt'
+			add_joint =  'lip_lower_main_jnt' if is_upper else 'lip_upper_main_jnt'
+			infs = cmds.skinCluster(zip_skc, e=True, ai=add_joint, lw=True)
+
+			infs = cmds.skinCluster(zip_skc, q=True, inf=True)
+			# Lock other joints
+			for inf in infs:
+				cmds.setAttr(f'{inf}.liw', 1)
+				
+			cmds.select(zip_nrb)
+			cmds.setToolTo('artAttrSkinContext')
+			cmds.artAttrSkinPaintCtx('artAttrSkinContext', edit=True, sao='scale')
+			cmds.setAttr(f'{add_joint}.liw', 0)
+			cmds.setAttr(f'{host_joint}.liw', 0)
+			cmds.artAttrSkinPaintCtx('artAttrSkinContext', edit=True, opacity=0.5)
+			cmds.artAttrSkinPaintCtx('artAttrSkinContext', edit=True, value=0)
+
+			SKIN_CLUSTER_INFLUENCE_LIST = 'theSkinClusterInflList'
+			last_jnt = cmds.artAttrSkinPaintCtx('artAttrSkinContext', q=True, inf=True)
+			mel.eval('artSkinInflListChanging "{}" 0'.format(last_jnt))
+			cmds.treeView(SKIN_CLUSTER_INFLUENCE_LIST, edit=True, clearSelection=True)
+			cmds.treeView(SKIN_CLUSTER_INFLUENCE_LIST, edit=True, selectItem=(host_joint, True))
+			mel.eval('artSkinInflListChanging "{}" 1'.format(host_joint))
+			mel.eval('artSkinInflListChanged artAttrSkinPaintCtx')
+			mel.eval('refreshAE')
+			mel.eval ("artAttrSkinPaintCtx -e -clear artAttrSkinContext")
+
+			# ————————— Create blendshape and targets —————————
+			bsh_name =  NAMER.format(nurb_name, [fearture_name], None, nurb_side, 'bsh')
+			cmds.blendShape(zip_nrb, orig_nrb, tc = 0, n = bsh_name, bf=True)
+			for i in range(num_vtx):
+				attr = f'{bsh_name}.inputTarget[0].inputTargetGroup[0].targetWeights[{i}]'
+				cmds.setAttr(attr, 0)
+				for i in range(0, v):
+					attr = f'{bsh_name}.inputTarget[0].inputTargetGroup[0].targetWeights[{i}]'
+					cmds.setAttr(attr, 1)
+				
+			for cv_i in range(max_cv-1):
+				next_index = cmds.blendShape(bsh_name, q=True, weightCount=True)
+				cmds.blendShape( bsh_name, edit=True, t=(orig_nrb, next_index, zip_nrb, 1.0))
+				weight_start = v * (cv_i+1)
+				weight_end = v * (cv_i+2)
+				
+				for i in range(num_vtx):
+					attr = f'{bsh_name}.inputTarget[0].inputTargetGroup[{next_index}].targetWeights[{i}]'
+					cmds.setAttr(attr, 0)
+				
+				for i in range(weight_start, weight_end):
+					attr = f'{bsh_name}.inputTarget[0].inputTargetGroup[{next_index}].targetWeights[{i}]'
+					cmds.setAttr(attr, 1)
+				
+		sides = {
+			'r': [0, 1, 2, 3, 4],
+			'l': [9, 8, 7, 6, 5]
+		}
+
+		sections = ['upper', 'lower']
+		driver_attr = 'zip'
+		dv_steps = [0, 2, 4, 6, 8, 10]
+
+		for side, indices in sides.items():
+			crnr_ctrl = f'{side}_lip_corner_ctl'
+			cmds.addAttr(crnr_ctrl, ln = driver_attr, min=0, max=10, dv=0, k=True)
+			driver = f'{crnr_ctrl}.{driver_attr}'
+				
+			for section in sections:
+				zip_bsh = f'lip_{section}_zip_bsh'
+				zip_nrb_base = f'lip_{section}_zip_nrb'
+
+				for i, target_idx in enumerate(indices):
+					suffix = str(target_idx) if target_idx > 0 else ''
+					driven = f'{zip_bsh}.{zip_nrb_base}{suffix}'
+					activation_threshold = (i + 1) * 2
+					
+					for dv in dv_steps:
+						val = 1 if dv >= activation_threshold else 0
+						cmds.setDrivenKeyframe(driven, cd=driver, dv=dv, v=val)
