@@ -187,26 +187,27 @@ class SkinClusterData(object):
 
 		return True
 	
-	def export_data(self, node=None, dir_path=None, log=False):
+	def export_data(self, node=None, dir_path=None, log=False, skin_cluster=None):
 		'''
 		Export skin weight data to a .npy file
 
 		:param node: Skinned object
 		:param dir_path: Destination folder to keep the skin data
 		'''
-		if node is None:
-			selection = cmds.ls(sl=True)
-			if not selection:
-				print('🚨 ERROR: Please Select Something 🚨')
+		if skin_cluster is None:
+			if node is None:
+				selection = cmds.ls(sl=True)
+				if not selection:
+					print('🚨 ERROR: Please Select Something 🚨')
+					return False
+				node = selection[0]
+			
+			sk.name_it([node])
+		
+			skin_cluster = mel.eval(f'findRelatedSkinCluster {node}')
+			if not cmds.objExists(skin_cluster):
+				print(f'🚨 ERROR: NO Skin Cluster on {node} 🚨')
 				return False
-			node = selection[0]
-		
-		sk.name_it([node])
-		
-		skin_cluster = mel.eval(f'findRelatedSkinCluster {node}')
-		if not cmds.objExists(skin_cluster):
-			print(f'🚨 ERROR: NO Skin Cluster on {node} 🚨')
-			return False
 
 		if dir_path is None:
 			start_dir = cmds.workspace(q=True, rootDirectory = True)
@@ -225,6 +226,8 @@ class SkinClusterData(object):
 		# start_time = time.time()
 
 		self.get_data(skin_cluster)
+
+		cmds.skinCluster(skin_cluster, e=True, rui=True)
 
 		# time_elapsed = time.time() - start_time
 		# print(f'Get Data Elapsed: {time_elapsed}')
