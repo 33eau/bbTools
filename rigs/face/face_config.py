@@ -157,11 +157,11 @@ LIP_SETTINGS = {
 	'main_upper_move': [0, 0, 0.95],
 	'main_lower_move': [0, 0, 1.3],
 	'upper_shape': 'lipUpper',
-	'upper_move': [0, -0.05, 0.75],
+	'upper_move': [0, 0.5, 0.75],
 	'upper_rotate': [90, 0, 0] ,
 	'lower_shape': 'lipLower',
-	'lower_move': [0, 0.05, -0.75],
-	'lower_rotate': [-90, 0, 0],
+	'lower_move': [0, -0.2, 0.75],
+	'lower_rotate': [90, 0, 0],
 }
 
 EYEBROWS_SETTINGS={

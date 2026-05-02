@@ -30,6 +30,7 @@ class EyebrowRig(FaceModule):
 				curve  = 'l_eyebrow_crv',
 				parent_ctrl_grp=None,
 				parent_mod_grp=None,
+				parent_jnt = 'skull_jnt',
 				remove_elem='bp'
 				):
 		super().__init__(name, side, parent_ctrl_grp, parent_mod_grp, remove_elem)
@@ -40,6 +41,7 @@ class EyebrowRig(FaceModule):
 		self.eyebrow_jnts =  eyebrow_jnts
 		self.eyebrow_main_jnt =  eyebrow_main_jnt
 		self.curve =  curve
+		self.parent_jnt =  parent_jnt
 
 		self.config = face_config.EYEBROWS_SETTINGS
 
@@ -47,6 +49,7 @@ class EyebrowRig(FaceModule):
 		self.grps = []
 		self.aux_ctrls = []
 		self.aux_grps = []
+		self.all_ctrls = []
 	
 	def build(self):
 		self.build_hierarchy(self.name, self.side)
@@ -59,8 +62,10 @@ class EyebrowRig(FaceModule):
 													[0, 0, 0],
 													[0, 0, 0],
 													'direct',
-													ctrl_grp = self.ctrl_grp
+													ctrl_grp = self.ctrl_grp,
+													deg=3
 													)
+		cmds.parent(main_jnt_grp, self.parent_jnt)
 
 		for jnt in self.eyebrow_jnts:
 			rig_jnt_grp, rig_jnt = self.create_rig_joint(jnt, rad = 0.3)
@@ -72,13 +77,15 @@ class EyebrowRig(FaceModule):
 													self.config['ctrl_rotate'],
 													[0, 0, 0.3],
 													'direct',
-													ctrl_grp = self.ctrl_grp,
+													ctrl_grp = main_ctrl,
 													color_set = 'ter'
 													)
 				bb.direct_connect([aux_ctrl_grp[0]], [rig_jnt_grp])
 				#bb.create_constrain([aux_ctrl_grp[0]], rig_jnt_grp, 'pac')
+				bb.lock_attrs(aux_ctrl, ['r', 's'], hide =True)
 				self.aux_grps.append(aux_ctrl_grp[0])
 				self.aux_ctrls.append(aux_ctrl)
+				self.all_ctrls.append(aux_ctrl)
 			else:
 				part_ctrl_grp, part_ctrl = self.create_controller(rig_jnt,
 													self.default_shape,
@@ -93,6 +100,9 @@ class EyebrowRig(FaceModule):
 				#bb.create_constrain([part_ctrl_grp[0]], rig_jnt_grp, 'pac')
 				self.grps.append(part_ctrl_grp)
 				self.ctrls.append(part_ctrl)
+				self.all_ctrls.append(part_ctrl)
+			
+			cmds.parent(rig_jnt_grp, main_jnt)
 			
 			
 		for i, aux in enumerate(self.aux_grps):
@@ -111,6 +121,7 @@ class EyebrowRig(FaceModule):
 		bb.set_color(objects=[bind_jnt_grp], color='pink', viewport=True, outliner=True)
 		point_jnt_grp = bb.create_node('group', self.name, ['point'], None, self.side, p=self.jnt_grp)
 		bb.set_color(objects=[point_jnt_grp], color='lime', viewport=True, outliner=True)
+		bb.direct_connect([self.parent_jnt], [point_jnt_grp])
 
 		cv_count = bb.get_cv_count(self.curve)
 		curve_shp = cmds.listRelatives(self.curve, s=True)[0]
@@ -119,6 +130,7 @@ class EyebrowRig(FaceModule):
 			if i == 1:
 				# Skip creating cv[1] since it's too close to the beginning
 				continue
+
 			num = f'{i+1:02d}' if i == 0 else f'{i:02d}'
 			bnd_jnt = bb.create_node('joint', self.name, None, num, self.side, rad=0.2)
 			bnd_jnt_grp = bb.create_offset_group(bnd_jnt, ['jnt'])
@@ -139,21 +151,51 @@ class EyebrowRig(FaceModule):
 			cmds.connectAttr(f'{bind_mtp}.allCoordinates ', f'{bnd_jnt_grp}.t')
 			cmds.connectAttr(f'{bind_mtp}.r ', f'{bnd_jnt_grp}.r')
 
+			cmds.setAttr( f'{bind_mtp}.worldUpType', 2)
+			cmds.connectAttr(f'{main_ctrl}.worldMatrix[0]', f'{bind_mtp}.worldUpMatrix')
+			cmds.setAttr( f'{bind_mtp}.frontAxis', 0)
+			cmds.setAttr( f'{bind_mtp}.upAxis', 1)
+			
+			# if i < len(self.all_ctrls):
+			# 	if i != 0 :
+			# 		eb_ctrl = self.all_ctrls[i-1]
+			# 	else:
+			# 		eb_ctrl = self.all_ctrls[0]
+			# else:
+			# 	if i != cv_count+1:
+			# 		eb_ctrl = self.all_ctrls[-2]
+			# 	else:
+			# 		eb_ctrl = self.all_ctrls[-1]
+
+			# cmds.connectAttr(f'{eb_ctrl}.rotateX', f'{bind_mtp}.frontTwist')
+			# cmds.connectAttr(f'{eb_ctrl}.rotateY', f'{bind_mtp}.upTwist')
+			# cmds.connectAttr(f'{eb_ctrl}.rotateZ', f'{bind_mtp}.sideTwist')
+
 			poi_jnt = bb.create_node('joint', self.name, ['point'], num, self.side, rad=0.1)
 			poi_jnt_grp = bb.create_offset_group([poi_jnt])
 			poi_jnt_grp = poi_jnt_grp[poi_jnt][0]
 			bb.snap([bnd_jnt_grp], poi_jnt_grp)
 			bb.set_color(objects=[poi_jnt_grp], color='lightLime', viewport=True, outliner=True)
 
-			bb.direct_connect([bnd_jnt_grp], [poi_jnt_grp], channels = ['translate'])
+			#bb.direct_connect([bnd_jnt_grp], [poi_jnt_grp], channels = ['translate'])
+			bb.create_constrain([bnd_jnt_grp], poi_jnt_grp, 'point')
 			
 			cmds.parent(bnd_jnt_grp, bind_jnt_grp)
 			cmds.parent(poi_jnt_grp, point_jnt_grp)
+			
+
 
 	def add_mid_ctrl(self, l_in_ctrl, r_in_ctrl, mid_ctrl ):
 		grp_dic = bb.create_offset_group(mid_ctrl, ['ctrl_follow'])
 		mid_grp = grp_dic[mid_ctrl][0]
-		bb.add_follow_attr(parents=[r_in_ctrl, l_in_ctrl], target=mid_grp, ctrl = mid_ctrl)
+		l_follow_grp = bb.create_node('group', self.name, ['follow'], None, 'l')
+		r_follow_grp = bb.create_node('group', self.name, ['follow'], None, 'r')
+		cmds.matchTransform(l_follow_grp, l_in_ctrl)
+		cmds.matchTransform(r_follow_grp, r_in_ctrl)
+		cmds.parent(l_follow_grp, l_in_ctrl)
+		cmds.parent(r_follow_grp, r_in_ctrl)
+
+		cmds.pointConstraint([r_follow_grp, l_follow_grp], mid_grp, mo=True)
 
 		jnt = cmds.listConnections(mid_ctrl, c=True, type='joint', s=True)[-1]
 		jnt_grp_dic = bb.create_offset_group(jnt, ['jnt_follow'])
