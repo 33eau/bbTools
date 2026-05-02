@@ -43,6 +43,7 @@ class FaceModule(object):
 		self.build_hierarchy(self.name, self.side)
 		dead_jnt = bb.create_node('joint', self.name, ['dead'], None, None)
 		cmds.parent(dead_jnt, self.jnt_grp)
+		bb.set_color([self.ctrl_grp, self.mod_grp, dead_jnt], 'yellow', False, True)
 
 	def build_hierarchy(self, name, side):
 		'''
@@ -119,12 +120,34 @@ class FaceModule(object):
 			shape_rotation=rotate,
 			move=move,
 			clean_elem=self.remove_elem,
-
 			**kwargs
 		)
 	
 		return controller.offset_grps[0], controller.ctrls[0]
 
+	def add_main_ctrl(self, ctrl_grps = None, jnt_grps = None, parent_jnt = None, parent_ctrl = None, name = None, position_obj = None, ctrl_shape='circleCross', scale=1, rotate=[0, 0, 0], move=[0, 0, 0], color_set='sec'):
+		'''
+			Add main controller to a group of tweaker ctrls
+		'''
 
+		ctrl_parent = cmds.listRelatives(ctrl_grps[0], p=True)[0]
+		jnt_parent = cmds.listRelatives(jnt_grps[0], p=True)[0]
+
+		parent_jnt = parent_jnt if parent_jnt else jnt_parent
+		parent_ctrl = parent_ctrl if parent_ctrl else ctrl_parent
+
+		side = parser.find_element(ctrl_grps[0], 'sides')
+		main_jnt = bb.create_node('joint', name, ['main'], None, side)
+		main_grp = bb.create_offset_group(main_jnt, ['zro'])
+		main_grp = main_grp[main_jnt]
+		cmds.matchTransform(main_grp, position_obj)
+
+		ctrl_grp, ctrl = self.create_controller(main_jnt, ctrl_shape, scale, rotate, move, 'direct', ['Main'], color_set = color_set, ctrl_grp = parent_ctrl)
+
+		cmds.parent(ctrl_grps, ctrl)
+		cmds.parent(jnt_grps, main_jnt)
+		cmds.parent(main_grp, parent_jnt)
+
+		return ctrl
 		
 
