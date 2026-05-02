@@ -32,4 +32,3 @@ CONSTRAINT_TYPES = {
 	"scale": ["scc", "scale"],
 	"parentScale": ["psc", "parentScale"]
 }
-
