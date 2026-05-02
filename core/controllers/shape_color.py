@@ -1,7 +1,7 @@
 CTRL_COLOR = {'L':'blue', 'R':'red', 'M':'yellow'}
-CTRL_SEC_COLOR = {'L':'lightBlue', 'R':'lightRed', 'M':'lightOrange'}
-CTRL_GRP_COLOR = {'L':'sky', 'R':'pink', 'M':'gold'}
-CTRL_TER_COLOR = {'L':'lightSky', 'R':'lightPink', 'M':'lightGold'}
+CTRL_SEC_COLOR = {'L':'lightBlue', 'R':'lightRed', 'M':'mayaGreen'}
+CTRL_GRP_COLOR = {'L':'sky', 'R':'pink', 'M':'mint'}
+CTRL_TER_COLOR = {'L':'lightSky', 'R':'lightPink', 'M':'lightMayaGreen'}
 
 COLORS = {	'lightRed': (1.0, 0.170, 0.170),
 			'lightOrange': (1.0, 0.5333333611488342, 0.30000001192092896),
