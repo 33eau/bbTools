@@ -84,6 +84,7 @@ class Controller:
 					run = True,
 					log = False,
 					clean_elem = None,
+					deg=1,
 					**kwargs 
 					):
 		
@@ -105,6 +106,7 @@ class Controller:
 		self.fk_chain = fk_chain
 		self.upper_driver =  upper_driver
 		self.clean_elem =  clean_elem
+		self.deg =  deg
 
 		self.lock_attrs = lock_attrs + ['v'] if lock_attrs else ['v']
 
@@ -139,7 +141,8 @@ class Controller:
 								scale=self.scale, 
 								shape_rotation=self.shape_rotation, 
 								rotate_order=self.rotate_order,
-								move = self.move
+								move = self.move,
+								deg = self.deg
 								)
 				self.ctrls.append(ctrl)
 
@@ -191,10 +194,11 @@ class Controller:
 					shape_rotation=[0, 0, 0], 
 					rotate_order='zyx',
 					move = [0, 0, 0],
-					close_curve = True):
+					close_curve = True,
+					deg=3):
 
 		points = shapes.get(shape, shapes['crossCircle'])
-		crv = cmds.curve(p=points, d=3)
+		crv = cmds.curve(p=points, d=deg)
 		crv = cmds.rename(crv, ctrl_name)
 		shp = cmds.listRelatives(crv, s=True)[0]
 		if close_curve:
@@ -502,7 +506,27 @@ def new_shape():
 	shape[obj] = coordinates
 	io.export_data(file_name = SHAPE_FILE, data = shape, path = SHAPES_PATH, indent = 4, mode = 'append', log = True)	
 
+def redraw( ctrls=None, shape = '', color = 'red', scale = 1.0 ):
+	if not ctrls:
+		ctrls = cmds.ls( sl = True )
 
+	for ctrl in ctrls:
+		ctrl_shp = cmds.listRelatives( ctrl, s = True )[0]
+		orig_col = False
+		if color == 'orig':
+			orig_col = True
+			colorRGB = cmds.getAttr(f'{ctrl_shp}.overrideColorRGB')[0]
+			color = 'red'
+		temp_ctrl = Controller( [ctrl], name= 'tmp', shape= shape, connection_type='None', color=color, scale = scale)
+		temp_shp = cmds.listRelatives( temp_ctrl.ctrls[0], s = True )[0]
+		cmds.parent( temp_shp, ctrl, r = True, s = True )
+		cmds.delete( ctrl_shp )
+		ctrl_shp = cmds.rename( temp_shp, f'{ctrl}Shape')
+		cmds.delete( temp_ctrl.offset_grps[0][0])
+		cmds.select( ctrl )
+		if orig_col:
+			cmds.setAttr(f'{ctrl_shp}.overrideColorRGB', *colorRGB)
+			color = 'orig'
 	
 		
 
