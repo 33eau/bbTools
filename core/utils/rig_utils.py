@@ -75,6 +75,10 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 		eff_name = NAMER.format(base, elements, number, side, 'eff')
 		eff = cmds.rename(eff, eff_name)
 		named_node = [ikh, eff]
+	elif node_type == 'distanceDimShape':
+		node_name_shp = node_name+'Shape'
+		dtm_shp = cmds.createNode('distanceDimShape', n=node_name_shp, **clean_kwargs)
+		named_node = cmds.listRelatives(dtm_shp, p=True)[0]
 	else:
 		named_node = cmds.createNode(node_type, n=node_name, **clean_kwargs)
 	return named_node
@@ -114,7 +118,14 @@ def normalize_axis(axis):
 def axis_convert(axis = None, return_type = '', up_axis = None):
 	"""
 	:param axis: input axis
-	:param return_type: index, letter, absolute_letter, vector, ik_twist_index, ik_twist_up_index, cross_vector, cross_letter
+	:param return_type: index, 
+						letter, 
+						absolute_letter, 
+						vector, 
+						ik_twist_index, 
+						ik_twist_up_index, 
+						cross_vector, 
+						cross_letter
 	"""
 
 	formatted_axis = normalize_axis(axis)
@@ -394,7 +405,7 @@ def create_constrain( parents=[], target=None, type="pac", maintain_offset=True)
 # -------------------------------------------------------------------
 
 def inverse_blendshape_weight(bsh_node = None, target_index = 'weight[1]', geo_index = 0, just_log=False):
-	target = cmds.listAttr(f'{bsh_node}.{target_index}', m=True)[0]
+	target = cmds.listAttr(f'{bsh_node}.w[{target_index}]', m=True)[0]
 	if just_log:
 		print(f'{bsh_node} : {target}')
 		return
@@ -409,9 +420,9 @@ def inverse_blendshape_weight(bsh_node = None, target_index = 'weight[1]', geo_i
 	else:
 		print('Dunno the type of selected obj. Function accepts only a NURBS or a MESH')
 		return False
-	target_int = re.findall(r'\d+', target_index)[0]
+	#target_int = re.findall(r'\d+', target_index)[0]
 	for i in range(0, num_vtx):
-		attr_path = f'{bsh_node}.inputTarget[{geo_index}].inputTargetGroup[{target_int}].targetWeights[{i}]'
+		attr_path = f'{bsh_node}.inputTarget[{geo_index}].inputTargetGroup[{target_index}].targetWeights[{i}]'
 		current_value = cmds.getAttr(attr_path)
 		new_value = 1 - current_value
 		cmds.setAttr(attr_path, new_value)
@@ -1195,7 +1206,7 @@ def joint_label(remove = None, remove_from_last = 2, force_on=False):
 		cmds.setAttr( f'{jnt}.otherType',  full_name , type = 'string' )
 	return None
 
-def lock_attrs(obj='', attrs = ['t', 'r', 's'], unlock = False):
+def lock_attrs(obj='', attrs = ['t', 'r', 's'], unlock = False, hide=False):
 	attrs.append('v')
 	if not obj:
 		obj = cmds.ls(sl=True)[0]
@@ -1203,7 +1214,8 @@ def lock_attrs(obj='', attrs = ['t', 'r', 's'], unlock = False):
 		for ax in 'xyz':
 			try:
 				cmds.setAttr(f'{obj}.{attr}{ax}', l = not unlock)
-				#cmds.setAttr(f'{obj}.{attr}{ax}', cb = not unlock)
+				if hide:
+					cmds.setAttr(f'{obj}.{attr}{ax}', cb=not hide, k=not hide)
 			except:pass
 
 def delete_orig():
