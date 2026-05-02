@@ -71,7 +71,7 @@ TYPE_SUFFIX={
 'curveInfo'         	: 'cif',
 'decomposeMatrix'   	: 'dcm',
 'distanceBetween'   	: 'dbt',
-'distanceDimension' 	: 'ddm',
+'distanceDimShape' 		: 'ddm',
 'follicle'				: 'fol',
 'lattice'				: 'lat',
 'motionPath'			: 'mtp',
