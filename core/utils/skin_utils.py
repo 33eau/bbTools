@@ -219,7 +219,7 @@ def name_it(objects=''):
 		base, element, number, side, suffix = NAMER.extract(obj) 
 		element.append(suffix)
 		node_name = NAMER.format(base, element, number, side, templates.TYPE_SUFFIX['skinCluster'])
-		skc = cmds.rename(skc, f'skincluster__{obj}')
+		skc = cmds.rename(skc, f'{obj}_skc')
 	return skc
 
 def unbind_skin(obj = ''):
@@ -338,13 +338,17 @@ def mirror_skinweight():
 				except:pass
 			else:
 				print(f'ERROR: {opposite_inf} no exist')
-	cmds.copySkinWeights(ss=skin_cluster, ds=skin_cluster, mirrorMode='YZ', surfaceAssociation='closestPoint', influenceAssociation='oneToOne')
+	cmds.copySkinWeights(ss=skin_cluster, ds=skin_cluster, mirrorMode='YZ', surfaceAssociation='closestPoint', influenceAssociation='oneToOne', mirrorInverse = False)
 	print(f'Mirrored {skin_cluster} completed')
 
-def copy_skin():
-	selection = cmds.ls(sl=True)
-	source = selection[-1]
-	targets = selection[:-1]
+def copy_skin(objs):
+	if not objs:
+		selection = cmds.ls(sl=True)
+		source = selection[-1]
+		targets = selection[:-1]
+	else:
+		source = objs[-1]
+		targets = objs[:-1]
 
 	source_skc= get_skin_cluster_name(source)[0]
 	infs = cmds.skinCluster(source_skc, inf=True, q=True)
