@@ -242,11 +242,11 @@ def get_cv_count(curve):
 	return int(i_spans + i_degree - 1)
 
 def get_curve_info(curve):
-	i_cv = get_cv_count(curve)
+	cv = get_cv_count(curve)
 	shape = f"{curve}Shape"
-	i_spans = int(cmds.getAttr(f"{shape}.spans"))
-	i_degree = int(cmds.getAttr(f"{shape}.degree"))
-	return i_cv, i_spans, i_degree
+	spans = int(cmds.getAttr(f"{shape}.spans"))
+	degree = int(cmds.getAttr(f"{shape}.degree"))
+	return cv, spans, degree
 
 def get_nurb_info(nurb = None, num_vtx = False):
 	if cmds.objectType(nurb)=='transfrom':
@@ -430,7 +430,6 @@ def inverse_blendshape_weight(bsh_node = None, target_index = 'weight[1]', geo_i
 	mel.eval("ArtPaintBlendShapeWeightsToolOptions;")
 	print(f"Done: Inverted '{target}' weights on {bsh_node}")
 			
-
 def inverse_after_duplicate(bsh_node = 'blendshape__face_local'):
 	targets = cmds.aliasAttr(f'{bsh_node}.w[]', q=True)
 	for target in targets:
@@ -458,8 +457,6 @@ def inverse_after_duplicate(bsh_node = 'blendshape__face_local'):
 		
 	cmds.aliasAttr(target_name, f'{bsh_node}.{new_target_index}')
 	inverse_blendshape_weight(bsh_node = bsh_node, target_index = new_target_index, geo_index = 0, just_log=False)
-
-
 
 
 # -------------------------------------------------------------------
@@ -768,7 +765,6 @@ def matrix_constrain(parent, target, type='parent', store_orig = False, channels
 	cmds.setAttr(f'{target}.rotate', *[0,0,0])
 	cmds.setAttr(f'{target}.t', *[0,0,0])
 
-
 def create_local_world(local=None, world=None, target=None, types=['rotate'], attr_name='worldOrient', ctrl=None, dv=0.0):
 	'''
 	create local world space switch using matrix
@@ -833,7 +829,6 @@ def create_local_world(local=None, world=None, target=None, types=['rotate'], at
 
 	cmds.addAttr( ctrl, ln = attr_name, at = 'float', min = 0, max = 1, dv = dv, k = True )
 	cmds.connectAttr(f'{ctrl}.{attr_name}', f'{blend_bmt}.target[0].weight')
-
 
 # ——————————————————————————————————————————————————————————————————————
 
@@ -1263,7 +1258,8 @@ def create_xyz(objs=None, connection_type=None, scale=1, bp_jnt=False,):
 								color=colors[i], 
 								line_width=scale, 
 								scale=scale, 
-								close_curve = False)
+								close_curve = False,
+								deg = 1)
 			axis_crvs.append(ax_crv)
 			shape = cmds.listRelatives(ax_crv, s=True)[0]
 			axis_shapes.append(shape)
@@ -1272,7 +1268,8 @@ def create_xyz(objs=None, connection_type=None, scale=1, bp_jnt=False,):
 								shape='axis', 
 								color='white', 
 								line_width=scale*3.0, 
-								scale=scale*10)
+								scale=scale*10,
+								deg = 1)
 		lock_attrs(axis_ctrl, ['s'])
 		cmds.parent(axis_shapes, axis_ctrl, r=True, s=True)
 		grp = create_offset_group(axis_ctrl)

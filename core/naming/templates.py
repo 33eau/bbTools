@@ -10,7 +10,7 @@ NAME_TEMPLATES = {
 SIDE_GROUPS = {
 	'L': ['l', 'L', 'LFT', 'lft', 'Left','l_', '_l_'],
 	'R': ['r', 'R', 'RGT', 'rgt', 'Right','r_', '_r_'],
-	'M': ['m', 'M', 'MID', 'mid', 'Middle','m_', '_m_']
+	'C': ['c', 'C', 'CEN', 'cen', 'Center','c_', '_c_']
 }
 
 SIDE_OUTPUT = {
@@ -28,18 +28,20 @@ SIDE_OUTPUT = {
 		'3lower': 'rgt',
 		'word': 'Right',
 	},
-	'M': {
-		'lower': 'm',
-		'upper': 'M',
+	'C': {
+		'lower': 'c',
+		'upper': 'C',
 		'3upper': '',
 		'3lower': '',
-		'word': 'Middle',
+		'word': 'Center',
 	}
 }
 
 STRIP_TOKENS = ['offset', 'zro', 'jnt', 'ctrl', 'space', 'bnd']
 
 ELEMENTS = ['Fk', 'Ik', 'Spline', 'Ribbon', 'Tweaker', 'Space', 'Blueprint']
+
+REGIONS = ['fnt', 'bck', 'cen', 'upr', 'low', 'btm', 'mid']
 
 SIDES = ['l_', 'LFT', 'r_', 'RGT']
 
@@ -63,6 +65,7 @@ TYPE_SUFFIX={
 'blendColors'       	: 'bcl',
 'blendMatrix'			: 'bmt',
 'blendTwoAttr'      	: 'bta',
+'blendWeighted'			: 'bwt',
 'clamp'             	: 'clm',
 'closestPointOnMesh'	: 'cpm',
 'closestPointOnSurface'	: 'cps',
@@ -73,6 +76,7 @@ TYPE_SUFFIX={
 'distanceBetween'   	: 'dbt',
 'distanceDimShape' 		: 'ddm',
 'follicle'				: 'fol',
+'inverseMatrix'			: 'ivm',
 'lattice'				: 'lat',
 'motionPath'			: 'mtp',
 'multDoubleLinear'  	: 'mdl',
@@ -83,7 +87,7 @@ TYPE_SUFFIX={
 'plusMinusAverage'  	: 'pma',
 'pointOnCurveInfo'		: 'poc',
 'pointOnSurfaceInfo'	: 'pos',
-'remapValue'        	: 'rvl',
+'remapValue'        	: 'rmv',
 'reverse'           	: 'rev',
 'setRange'          	: 'srn',
 'surfaceInfo'       	: 'sif',
