@@ -21,3 +21,4 @@ sandbox/
 *.txt
 *.ini
 core/TEST.py
+core/tracks_rig.py
