@@ -205,6 +205,20 @@ class Controller:
 			cmds.closeCurve(shp, ch=False, ps=1, rpo=True, bb=0.5, bki=0, p=0.1)
 			bb.rotate_curve(crv, rotation=shape_rotation)
 			cmds.setAttr( f'{shp}.lineWidth', line_width)
+
+		# Auto detect side for colot if not provided
+		side_for_color = parser.find_element(ctrl_name, 'sides')
+		format_side = parser.format_side(side_for_color, 'upper') or 'C'
+
+		if color == 'sec':
+			color = shape_color.CTRL_SEC_COLOR[format_side]
+		elif color == 'ter':
+			color = shape_color.CTRL_TER_COLOR[format_side]
+		elif color == 'grp':
+			color = shape_color.CTRL_GRP_COLOR[format_side]
+		else:
+			color = color
+			
 		bb.set_color([crv], color)
 		bb.scale_shape(crv, scale)
 		bb.move_shape(crv, move)
@@ -317,7 +331,8 @@ class SuperRoot:
 						line_width=self.line_width, 
 						scale=scale, 
 						shape_rotation=[0, 0, 0], 
-						rotate_order='zxy'
+						rotate_order='zxy',
+						deg=1
 						)
 		# lock scale
 		lock_attrs = ['sx','sy','sz','v']
@@ -528,7 +543,7 @@ def redraw( ctrls=None, shape = '', color = 'red', scale = 1.0 ):
 			cmds.setAttr(f'{ctrl_shp}.overrideColorRGB', *colorRGB)
 			color = 'orig'
 	
-		
+	
 
 
 
