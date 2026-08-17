@@ -1,13 +1,13 @@
 from importlib import reload
 import maya.cmds as cmds
-from .utils import rig_utils as bb
-from .utils import skin_utils as bsk
-from .controllers import creator as bc
-from .controllers import shape_color
-from .naming import namer_factory as naming
-from .naming import templates
-from .naming import current_project
-from .naming import parser
+from ..core.utils import rig_utils as bb
+from ..core.utils import skin_utils as bsk
+from ..core.controllers import creator as bc
+from ..core.controllers import shape_color
+from ..core.naming import namer_factory as naming
+from ..core.naming import templates
+from ..core.naming import current_project
+from ..core.naming import parser
 
 # reload(bb)
 # reload(bsk)
@@ -58,6 +58,7 @@ class FkSplineRig:
 		self.up_axis =  up_axis
 		self.num_mid_controls =  num_mid_controls
 		self.offset_names = offset_names
+		self.side = side
 		self.stretch_attr =  stretch_attr
 		self.squash_attr =  squash_attr
 		self.global_scale =  global_scale
@@ -76,12 +77,6 @@ class FkSplineRig:
 		
 		if self.num_mid_controls >= (len(self.joints)/2):
 			cmds.warning(f'The amount of middle ctrls should be less than half of rig joints. Stretchy ik may pop when using mid ctrls.')
-
-		if side is None:
-			side = parser.find_element(self.joints[0], 'sides')
-			self.side = side if side else 'M'
-		else:
-			self.side = side
 
 		self.connection_type = 'parent'
 		self.color =  'yellow' 
@@ -145,6 +140,7 @@ class FkSplineRig:
 				cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{i+1:02d}', side=self.side, p=position)
 				cmds.parent(cv_jnt, crv_jnt_grp)
 				cv_joints.append(cv_jnt)
+				cmds.matchTransform(cv_jnt, self.joints[i+1], rot = True)
 
 
 		cmds.rebuildCurve(ik_crv, ch=False, rpo = True, rt=False, end=True, kr=False, kcp=False, kep=True, kt=False, s=(self.num_mid_controls/2)+1, d=3, tol = 0.01 )
@@ -175,7 +171,10 @@ class FkSplineRig:
 		if self.upper_driver:
 			bb.create_constrain([self.upper_driver], self.ctrl_grp, 'parentScale')
 			bb.create_constrain([self.upper_driver], self.mod_cons_grp, 'parentScale')
-
+		
 		for i, jnt in enumerate(rig_jnts):
-			bb.matrix_constrain(jnt, self.bind_jnts[i])
+			if self.connection_type == 'matrix_parent':
+				bb.matrix_constrain(jnt, self.bind_jnts[i])
+			else:
+				bb.create_constrain([jnt], self.bind_jnts[i], 'pac')
 

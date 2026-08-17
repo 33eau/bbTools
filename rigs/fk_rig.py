@@ -1,12 +1,12 @@
 from importlib import reload
 import maya.cmds as cmds
-from .utils import rig_utils as bb
-from .controllers import creator as bc
-from .controllers import shape_color
-from .data import constants 
-from .naming import namer_factory as naming
-from .naming import current_project
-from .naming import parser
+from ..core.utils import rig_utils as bb
+from ..core.controllers import creator as bc
+from ..core.controllers import shape_color
+from ..core.data import constants 
+from ..core.naming import namer_factory as naming
+from ..core.naming import current_project
+from ..core.naming import parser
 
 reload(bb )
 reload(bc)
@@ -49,12 +49,14 @@ class FKRig:
 		self.upper_driver =  upper_driver
 		self.rig_name = rig_name
 		self.element_name = element_name
+		self.side = side
 		self.stretch = stretch
 		self.squash = squash
 		self.offset_names = offset_names or ['zro', 'offset']
 		self.shape =  shape
 		self.aim_axis =  aim_axis
 		self.up_axis =  up_axis
+		self.color = color
 		self.connection_type = connection_type
 		self.stretch_attr =  stretch_attr
 		self.squash_attr =  squash_attr
@@ -70,22 +72,8 @@ class FKRig:
 		if not joints or not isinstance(joints, list) or len(joints) < 2:
 			raise ValueError("The 'joints' argument must be a list of at least two joint names.")
 
-		if side is None:
-			side = parser.find_element(self.joints[0], 'sides')
-			self.side = side if side else 'M'
-		else:
-			self.side = side
 		
-		if color is None:
-			formatted_side = parser.format_side(self.side, 'upper')
-			color = shape_color.CTRL_COLOR.get(formatted_side, [0.5, 0.5, 0.5])
-			self.color = color
-		else: 
-			self.color =  color 
-
 		self.ctrl_grp = None
-		self.ctrls = None
-		self.grps = None
 
 		self.ctrls, self.grps = self._build()
 
@@ -96,6 +84,8 @@ class FKRig:
 			self.joints = joints[self.element_name]
 			self.bind_jnts = joints['bnd']
 			cmds.parent(self.joints[0], self.mod_parent)
+			if self.bind_parent:
+				cmds.parent(self.bind_jnts[0], self.bind_parent)
 
 		if self.rig_name:
 			self.ctrl_grp = bb.create_node('group', self.rig_name, elements=[self.element_name, 'ctrl'], side = self.side, p=self.ctrl_parent)
@@ -127,10 +117,11 @@ class FKRig:
 			self._do_stretch_and_squash()
 
 		if self.add_rig_jnt:
-			if self.bind_parent:
-				cmds.parent(self.bind_jnts[0], self.bind_parent )
 			for rig, bind in zip(self.joints, self.bind_jnts):
-				bb.matrix_constrain(rig, bind)
+				if self.connection_type == 'matrix_parent':
+					bb.matrix_constrain(rig, bind)
+				else:
+					bb.create_constrain([rig], bind, 'pac')
 
 		return self.ctrls, self.grps
 
@@ -209,6 +200,7 @@ class FKRig:
 					cmds.connectAttr(f'{scale_attr_mdv}.o{axis}', f'{self.joints[i]}.s{axis}')
 
 		self.end_grp = stretch_grps[-1]
+
 # ## Example usage
 # meep_rig = FKRig( 
 # 				['meep_01_jnt', 'meep_02_jnt', 'meep_03_jnt', 'meep_04_jnt'],

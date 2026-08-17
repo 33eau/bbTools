@@ -4,16 +4,16 @@ import maya.cmds as cmds
 import os
 from pprint import pprint
 import maya.cmds as cmds
-from .utils import rig_utils as bb
-from .utils import io_utils as io
-from .controllers import creator as bc
-from .controllers import shape_color
-from .naming import namer_factory as naming
-from .naming import current_project
-from .naming import parser
-from . import bbFkRig as fk
-from . import bbIkRig as ik
-from . import bbFkIkRig as fkIk
+from ..core.utils import rig_utils as bb
+from ..core.utils import io_utils as io
+from ..core.controllers import creator as bc
+from ..core.controllers import shape_color
+from ..core.naming import namer_factory as naming
+from ..core.naming import current_project
+from ..core.naming import parser
+from . import fk_rig as fk
+from . import ik_rig as ik
+from . import fkIk_rig as fkIk
 
 reload(bb)
 reload(io)

@@ -1,14 +1,14 @@
 from importlib import reload
 import maya.cmds as cmds
-from .utils import rig_utils as bb
-from .controllers import creator as bc
-from .controllers import shape_color
-from .naming import namer_factory as naming
-from .naming import current_project
-from .naming import parser
-from . import bbIkRig as ik
-from . import bbFkRig as fk
-from . import bbRibbonRig as rbn
+from ..core.utils import rig_utils as bb
+from ..core.controllers import creator as bc
+from ..core.controllers import shape_color
+from ..core.naming import namer_factory as naming
+from ..core.naming import current_project
+from ..core.naming import parser
+from ..core import bbIkRig as ik
+from . import fk_rig as fk
+from . import ribbon_rig as rbn
 
 reload(bb)
 reload(bc)

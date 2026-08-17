@@ -1,11 +1,11 @@
 from importlib import reload
 import maya.cmds as cmds
-from .utils import rig_utils as bb
-from .controllers import creator as bc
-from .utils import skin_utils as skin
-from .naming import namer_factory as naming
-from .naming import current_project
-from .naming import parser
+from ..core.utils import rig_utils as bb
+from ..core.controllers import creator as bc
+from ..core.utils import skin_utils as skin
+from ..core.naming import namer_factory as naming
+from ..core.naming import current_project
+from ..core.naming import parser
 
 reload(bb)
 reload(bc)

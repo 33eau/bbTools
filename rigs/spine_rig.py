@@ -1,13 +1,13 @@
 from importlib import reload
 import maya.cmds as cmds
-from .utils import rig_utils as bb
-from .utils import skin_utils as bsk
-from .controllers import creator as bc
-from .controllers import shape_color
-from .naming import namer_factory as naming
-from .naming import templates
-from .naming import current_project
-from .naming import parser
+from ..core.utils import rig_utils as bb
+from ..core.utils import skin_utils as bsk
+from ..core.controllers import creator as bc
+from ..core.controllers import shape_color
+from ..core.naming import namer_factory as naming
+from ..core.naming import templates
+from ..core.naming import current_project
+from ..core.naming import parser
 
 reload(bb)
 reload(bsk)
@@ -43,6 +43,7 @@ class SpineRig:
 				mod_parent = '',
 				upper_driver = '',
 				top_ik_position = 0.6,
+				connection_type = 'matrix',
 				**controller_kwargs
                 ):
 
@@ -73,13 +74,16 @@ class SpineRig:
 		if self.num_mid_controls >= (len(self.joints)/2):
 			cmds.warning(f'The amount of middle ctrls should be less than half of rig joints. Stretchy ik may pop when using mid ctrls.')
 
-		if side is None:
-			side = parser.find_element(self.joints[0], 'sides')
-			self.side = side if side else 'M'
-		else:
-			self.side = side
+		# if side is None:
+		# 	side = parser.find_element(self.joints[0], 'sides')
+		# 	self.side = side if side else 'M'
+		# else:
+		# 	self.side = side
+		self.side = side
+		
+		self.aim_abs = bb.axis_convert(aim_axis, 'absolute_letter')
 
-		self.connection_type = 'parent'
+		self.connection_type = connection_type
 		self.color =  'yellow' 
 		self.subColor = 'green'	
 		self.position_attr = 'position'
@@ -142,6 +146,7 @@ class SpineRig:
 				position = cmds.getAttr(f'{tmp_point_poc}.position')[0]
 				cv_jnt = bb.create_node('joint', self.rig_name, ['Spline', 'Crv'], number=f'{i+1:02d}', side=self.side, p=position)
 				cv_joints.append(cv_jnt)
+				cmds.matchTransform(cv_jnt, self.joints[i+1], rot = True)
 
 		base_jnt = cv_joints[0]
 		top_jnt = cv_joints[-1]
@@ -230,10 +235,10 @@ class SpineRig:
 						name = self.rig_name+'Ik',
 						side = self.side,
 						offset_names = ['Zro', 'Space', 'Offset'],
-						shape = 'squareRound',
+						shape = 'square_round',
 						color = f'light{self.subColor.capitalize()}',
-						scale = self.scale,
-						connection_type = 'matrix_parent',
+						scale = self.scale*0.75,
+						connection_type = self.connection_type,
 						**self.controller_kwargs
 						)
 		mid_ctrls = mid_controllers.ctrls
@@ -316,18 +321,18 @@ class SpineRig:
 
 		for rig_jnt in rig_jnts[1:]:
 			base, element, number, _, _ = NAMER.extract(rig_jnt)
-			orig_pos = cmds.getAttr(f'{rig_jnt}.t{self.aim_axis}')
+			orig_pos = cmds.getAttr(f'{rig_jnt}.t{self.aim_abs}')
 			orig_pos_mdl = bb.create_node('multDoubleLinear', base, element + ['orig', 'pos'], number, self.side )
 			cmds.setAttr( f'{orig_pos_mdl}.i1', orig_pos )
 			cmds.connectAttr(f'{strech_switch_bcl}.opr', f'{orig_pos_mdl}.i2')
 
 			output_stretch = cmds.getAttr(f'{orig_pos_mdl}.o')
 			if round(output_stretch, 5) == round(orig_pos, 5):
-				cmds.connectAttr(f'{orig_pos_mdl}.o', f'{rig_jnt}.t{self.aim_axis}')
+				cmds.connectAttr(f'{orig_pos_mdl}.o', f'{rig_jnt}.t{self.aim_abs}')
 			else:
 				cmds.error(f'{self.stretch_attr} Output is not matching with the original position.\n\t output {output_stretch} : original {orig_pos}')
 		for rig_jnt in rig_jnts:
-			squash_axis = 'xyz'.replace(self.aim_axis, '')
+			squash_axis = 'xyz'.replace(self.aim_abs, '')
 			output_squash = cmds.getAttr(f'{squash_switch_bcl}.opr')
 			if output_squash == 1:
 				for ax in squash_axis:
@@ -356,9 +361,9 @@ class SpineRig:
 						name = f'{self.rig_name}Fk',
 						side = self.side,
 						offset_names = ['Zro', 'Offset'],
-						shape = 'crossCircle',
+						shape = 'circle',
 						color = self.color,
-						scale = self.scale * 1.2,
+						scale = self.scale,
 						fk_chain=True,
 						connection_type = 'None',
 						**self.controller_kwargs
@@ -382,10 +387,10 @@ class SpineRig:
 		# bb.create_constrain([self.upper_driver], self.ctrl_grp, type='parentScale' )
 
 		for i, jnt in enumerate(rig_jnts):
-			#bb.create_constrain([jnt], self.bind_jnts[i])
-			bb.matrix_constrain(jnt, self.bind_jnts[i])
-			#cmds.setAttr( f'{self.bind_jnts[i]}.radius', self.scale)
-		
+			if self.connection_type == 'matrix_parent':
+				bb.matrix_constrain(jnt, self.bind_jnts[i])
+			else:
+				bb.create_constrain([jnt], self.bind_jnts[i], 'pac')
 		# =============== End of organize ===============
 		return
 
