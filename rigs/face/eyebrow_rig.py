@@ -178,7 +178,7 @@ class EyebrowRig(FaceModule):
 			bb.set_color(objects=[poi_jnt_grp], color='lightLime', viewport=True, outliner=True)
 
 			#bb.direct_connect([bnd_jnt_grp], [poi_jnt_grp], channels = ['translate'])
-			bb.create_constrain([bnd_jnt_grp], poi_jnt_grp, 'point')
+			bb.create_constraint([bnd_jnt_grp], poi_jnt_grp, 'point')
 			
 			cmds.parent(bnd_jnt_grp, bind_jnt_grp)
 			cmds.parent(poi_jnt_grp, point_jnt_grp)

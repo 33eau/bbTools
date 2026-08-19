@@ -225,8 +225,8 @@ class SpineRig:
 		self.topNeg_grp = negative_grps[0]
 		self.baseNeg_grp = negative_grps[1]
 
-		bb.create_constrain([self.baseNeg_grp], base_jnt)
-		bb.create_constrain([self.topNeg_grp], top_jnt)
+		bb.create_constraint([self.baseNeg_grp], base_jnt)
+		bb.create_constraint([self.topNeg_grp], top_jnt)
 
 		mid_joints = cv_joints[1:-1]
 		mid_controllers = bc.Controller(
@@ -373,8 +373,8 @@ class SpineRig:
 		#bb.create_constrain([self.upper_driver], fk_grp[0][0], type='parentScale' )
 
 		for i, fk in enumerate(fk_ctrls):
-			bb.create_constrain([fk], mid_grps[i][0] , type='parent')
-		bb.create_constrain([fk_ctrls[-1]], top_grp[0][0] , type='parent')
+			bb.create_constraint([fk], mid_grps[i][0] , type='parent')
+		bb.create_constraint([fk_ctrls[-1]], top_grp[0][0] , type='parent')
 		# =============== End of fk System ===============
 		# =============== Organize ===============
 		cmds.parent(self.ctrl_grp, self.ctrl_parent)
@@ -390,7 +390,7 @@ class SpineRig:
 			if self.connection_type == 'matrix_parent':
 				bb.matrix_constrain(jnt, self.bind_jnts[i])
 			else:
-				bb.create_constrain([jnt], self.bind_jnts[i], 'pac')
+				bb.create_constraint([jnt], self.bind_jnts[i], 'pac')
 		# =============== End of organize ===============
 		return
 

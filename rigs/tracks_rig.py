@@ -118,7 +118,7 @@ class TracksRig:
 		main_ctrl_pos = cmds.xform(self.main_ctrl, q=True, t=True, ws=True)
 		cmds.xform(start_loc, t=[main_ctrl_pos[0], 0, main_ctrl_pos[2]], ws=True)
 		cmds.xform(move_loc, t=[main_ctrl_pos[0], 0, main_ctrl_pos[2]], ws=True)
-		bb.create_constrain([self.main_ctrl], move_loc, 'parent', maintain_offset=True)
+		bb.create_constraint([self.main_ctrl], move_loc, 'parent', maintain_offset=True)
 
 		start_loc_shp = cmds.listRelatives(start_loc, s=True)[0]
 		move_loc_shp = cmds.listRelatives(move_loc, s=True)[0]
@@ -215,7 +215,7 @@ class TracksRig:
 
 		# Tweakers rig
 		if self.tweakers == None:
-			bb.create_constrain([self.main_ctrl], self.ik_crv, 'pac')
+			bb.create_constraint([self.main_ctrl], self.ik_crv, 'pac')
 		else:
 			self.tweaker_rig(tweaker_num = self.tweakers)
 
@@ -272,14 +272,14 @@ class TracksRig:
 
 	def constrain_mesh(self):
 		for jnt, mesh in zip(self.jnt_list, self.meshes):
-			bb.create_constrain([jnt], mesh, 'psc')
+			bb.create_constraint([jnt], mesh, 'psc')
 
 	def tweaker_rig(self, tweaker_num = 10, color_set = 'sec'):
 		twk_jnts = []
 		twk_ctrls = []
 
 		twk_ctrl_grp = bb.create_node('group', self.base, ['tweaker', 'ctrl'], self.number, self.side)
-		bb.create_constrain([self.main_ctrl], twk_ctrl_grp)
+		bb.create_constraint([self.main_ctrl], twk_ctrl_grp)
 		cv, spans, degree = bb.get_curve_info(self.ik_crv)
 		twk_amount = round(cv/tweaker_num)
 
@@ -384,8 +384,8 @@ class TracksRig:
 			zro_grp = zro_grp[wheel_jnt][0]
 
 			cmds.parent(zro_grp, self.mod_grp)
-			bb.create_constrain([self.main_ctrl], zro_grp)
-			bb.create_constrain([wheel_jnt], wheel)
+			bb.create_constraint([self.main_ctrl], zro_grp)
+			bb.create_constraint([wheel_jnt], wheel)
 
 	def engine_fx(self):
 		ATTR_NAME = 'engineFx'

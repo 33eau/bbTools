@@ -246,8 +246,8 @@ class FingerRig:
 				scale_obj = self.global_scale.split('.')[0]
 				bb.snap([scale_obj], self.ctrl_grp)
 			if self.upper_driver:
-				bb.create_constrain([self.upper_driver], self.mod_grp, 'parentScale')
-				bb.create_constrain([self.upper_driver], self.ctrl_grp, 'parentScale')
+				bb.create_constraint([self.upper_driver], self.mod_grp, 'parentScale')
+				bb.create_constraint([self.upper_driver], self.ctrl_grp, 'parentScale')
 
 			if self.feature == 'ik':
 				upper_driver_scale = self.upper_driver + '.sx'

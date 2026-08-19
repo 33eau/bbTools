@@ -121,7 +121,7 @@ class FKRig:
 				if self.connection_type == 'matrix_parent':
 					bb.matrix_constrain(rig, bind)
 				else:
-					bb.create_constrain([rig], bind, 'pac')
+					bb.create_constraint([rig], bind, 'pac')
 
 		return self.ctrls, self.grps
 

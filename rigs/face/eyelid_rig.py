@@ -179,13 +179,22 @@ class EyelidRig(FaceModule):
 				base_jnt_grp, base_jnt = self.create_rig_joint(aim_locs[i_part], add_elem=f'{part}_{elem}', remove_elem='aim')
 				tip_jnt = bb.create_node('joint', self.name, [part, elem, 'tip'], None, self.side, rad=0.3)
 
-				val = ((cv_count-2)/(len(main_elems)+1)) * (i+1)
+				#val = ((cv_count-2)/(len(main_elems)+1)) * (i+1)
+				val = round(cv_count/4) * (i+1)
 				cv_posi = cmds.xform(f'{rig_crv}.cv[{val}]', ws=True, q=True, t=True)
 				cmds.setAttr( f'{tip_jnt}.t', *cv_posi)
+
+				# poc = bb.create_node('pointOnCurveInfo', self.name, [part, elem, 'tip'], None, self.side)
+				# pos_val = 0.25 * i
+				# cmds.setAttr( f'{poc}.parameter', pos_val)
+				# cmds.connectAttr(f'{rig_crv}.worldSpace[0]', f'{poc}.inputCurve')
+				# cmds.connectAttr(f'{poc}.position', f'{tip_jnt}.t')
+				#cmds.delete(poc)
 
 				self.main_jnts.append(tip_jnt)
 				self.curve_jnts.append(tip_jnt)
 				cmds.parent(tip_jnt, base_jnt)
+
 			
 				color_set = 'sec'
 				offset_names = ['Offset']

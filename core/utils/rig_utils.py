@@ -60,6 +60,7 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 	elif node_type == 'joint':
 		cmds.select(cl=True)
 		named_node = cmds.joint(n=node_name, **clean_kwargs)
+		cmds.makeIdentity( named_node, a=True, r=True, n=0, pn =1)
 	elif node_type == 'ikRp':
 		ikh, eff = cmds.ikHandle(n = node_name, sol='ikRPsolver', **clean_kwargs)
 		eff_name = NAMER.format(base, elements, number, side, 'eff')
@@ -82,23 +83,6 @@ def create_node(node_type='', base='', elements=None, number=None, side=None, na
 	else:
 		named_node = cmds.createNode(node_type, n=node_name, **clean_kwargs)
 	return named_node
-
-# def get_side(object, krt=False):
-# 	name = str(object)
-# 	for side_key, (tokens, short_name) in SIDE_MAP.items():
-# 		for token in tokens:
-# 			if token in name:
-# 				return tokens[1] if krt else tokens[0]
-# 	return "m" if krt else ""
-
-# def get_name(object):
-# 	full_name = object.split("_")[0]
-# 	side = get_side(full_name)
-# 	if side:
-# 		base_name = full_name.replace(side, "")
-# 	else:
-# 		base_name = full_name
-# 	return base_name
 
 def normalize_axis(axis):
 	if isinstance(axis, tuple):
@@ -148,7 +132,7 @@ def axis_convert(axis = None, return_type = '', up_axis = None):
 		result = AXIS_MAP[formatted_axis][3]
 
 	elif return_type == 'cross_vector':
-		axis_np = constants.AXIS_NPelement
+		axis_np = constants.AXIS_NP[formatted_axis]
 		up_axis_np = constants.AXIS_NP[up_axis]
 		result = np.cross(axis_np, up_axis_np).tolist()
 
@@ -159,9 +143,6 @@ def axis_convert(axis = None, return_type = '', up_axis = None):
 		result = normalize_axis(cross_axis)
 
 	return  result
-
-# def get_name_type(object):
-# 	return str(object).split("_")[-1]
 
 def get_node_type(obj):
 	shapes = cmds.listRelatives(obj, s=True)
@@ -349,12 +330,12 @@ def create_group(name='', children=None, parent_heirarchy='', parent_constrain='
 	if parent_constrain:
 		try:
 			constrain_type = constrain_type or 'psc'
-			create_constrain(constrain_type, parent_constrain, group)
+			create_constraint(constrain_type, parent_constrain, group)
 		except Exception as e:
 			cmds.warning(f'Fail to create Constrain from {parent_constrain} to {group}: {e}')
 
 	return group
-	
+
 def _normalize_constraint_type(type):
 	if not type:
 		return ""
@@ -363,7 +344,7 @@ def _normalize_constraint_type(type):
 			return name
 	return type	
 
-def create_constrain( parents=[], target=None, type="pac", maintain_offset=True):
+def create_constraint( parents=[], target=None, type="pac", maintain_offset=True):
 	type = _normalize_constraint_type(type)
 	parents = parents if parents else(cmds.ls(sl=True)[:-1] or [])
 	target = target or (cmds.ls(sl=True) or [])[-1]
@@ -458,7 +439,6 @@ def inverse_after_duplicate(bsh_node = 'blendshape__face_local'):
 	cmds.aliasAttr(target_name, f'{bsh_node}.{new_target_index}')
 	inverse_blendshape_weight(bsh_node = bsh_node, target_index = new_target_index, geo_index = 0, just_log=False)
 
-
 # -------------------------------------------------------------------
 # General tools
 # -------------------------------------------------------------------
@@ -471,7 +451,7 @@ def snap(parents=[], target=None, type = 'parent'):
 	if not target:
 		target = cmds.ls(sl=True)[-1]
 		parents = cmds.ls(sl=True)[:-1]
-	node = create_constrain(parents, target, type=type, maintain_offset = False)[0]
+	node = create_constraint(parents, target, type=type, maintain_offset = False)[0]
 	cmds.delete(node)
 
 def get_center_position(components):
@@ -646,7 +626,11 @@ def scale_shape(object, scale=1.0):
 			cmds.scale(scale_value[0], scale_value[1], scale_value[2], f'{shape}.vtx[0:{vtx_count-1}]', r=True)
 		
 		elif node_type in ['nurbsCurve', 'nurbsSurface']:
-			spans = cmds.getAttr(f'{shape}.spans')
+			if node_type == 'nurbsCurve':
+				spans = get_cv_count(object)
+			else:
+				spans = cmds.getAttr(f'{shape}.spans')
+				
 			cmds.scale(scale_value[0], scale_value[1], scale_value[2], f'{shape}.cv[0:{spans}]', r=True)
 		
 		else:
@@ -684,9 +668,9 @@ def rotate_curve(curve, rotation=[]):
 	#cmds.rotate( rotation[0], rotation[1], rotation[2], f'{curve}.cv[0:{cv_count}]', cs= False, forceOrderXYZ = True)
 	cmds.xform(f'{curve}.cv[0:{cv_count}]', ro=rotation, os=True, r=True)
 	
-# ——————————————————————————————————————————————————————————————————————
-# Matrix
-# ——————————————————————————————————————————————————————————————————————
+# ==========================================
+# MATRIX
+# ==========================================
 def matrix_constrain(parent, target, type='parent', store_orig = False, channels = ['translate', 'rotate', 'scale']):
 	elem_name = ['mtxCons']
 	if not parent and not target:
@@ -698,7 +682,10 @@ def matrix_constrain(parent, target, type='parent', store_orig = False, channels
 		target = sel[-1]
 
 	base, element, number, side, suffix = NAMER.extract(target)
-	target_parent = cmds.listRelatives(target, p=True)[0]
+	target_parent = cmds.listRelatives(target, p=True)
+	if target_parent:
+		target_parent = target_parent[0]
+
 
 	# Use openMaya matrix to check if two objects are in the exactly same position
 	parent_mtx = om.MMatrix(cmds.getAttr(f'{parent}.worldMatrix[0]'))
@@ -830,7 +817,7 @@ def create_local_world(local=None, world=None, target=None, types=['rotate'], at
 	cmds.addAttr( ctrl, ln = attr_name, at = 'float', min = 0, max = 1, dv = dv, k = True )
 	cmds.connectAttr(f'{ctrl}.{attr_name}', f'{blend_bmt}.target[0].weight')
 
-# ——————————————————————————————————————————————————————————————————————
+# 
 
 def direct_connect(parents=None, targets =None, channels = ['t', 'r', 's']):
 	parents = parents or cmds.ls(sl=True)[-1] 
@@ -894,7 +881,7 @@ def reset_value(all=True, attrs = []): #25Nov18
 
 def constrain_switch(parent_a='', parent_b='', target='', attr_name='', follow_type='parent', ctrl='', multiply = True, dv=0, min=0, max=1):
 	cmds.addAttr( ctrl, ln = attr_name, at = 'float', min = 0, max = 1, dv = dv, k = True )
-	cons_node = create_constrain([parent_a, parent_b], target, follow_type)[0][0]
+	cons_node = create_constraint([parent_a, parent_b], target, follow_type)[0][0]
 	base, element, number, corner_side, suffix = NAMER.extract(ctrl)
 	if multiply:
 		val_mul_mdl = create_node('multDoubleLinear', base, element, number, corner_side)
@@ -928,7 +915,7 @@ def space_switch(parentA = 'top_ctrl', parentB = 'base_ctrl', attr = 'followPosi
 	cmds.parent(local_grp, parentA)
 	cmds.parent(world_grp, parentB)
 
-	cons = create_constrain( parents=[local_grp, world_grp], target=target_grp, type=follow_type, maintain_offset=True)[0][0]
+	cons = create_constraint( parents=[local_grp, world_grp], target=target_grp, type=follow_type, maintain_offset=True)[0][0]
 
 	if not cmds.attributeQuery(attr, node=ctrl, exists=True):
 		cmds.addAttr( ctrl, ln = attr, at = 'float', min = 0, max = 1, dv = dv, k = True )
@@ -984,7 +971,7 @@ def fk_ik_switch(
 def add_follow_attr(parents = [], target = '', attr_name = 'follow', ctrl = '', min=0, max=1, dv=0.5, multiply=False, connect_type = 'parent'):
 
 	cmds.addAttr( ctrl, ln=attr_name, at='float', min=min, max=max, dv=dv, k=True )
-	cons_node = create_constrain(parents, target, connect_type, maintain_offset=True)[0][0]
+	cons_node = create_constraint(parents, target, connect_type, maintain_offset=True)[0][0]
 	#cmds.setAttr(f'{cons_node}.interpType', 2)
 	output = f'{ctrl}.{attr_name}'
 
@@ -1095,6 +1082,19 @@ def pole_vector_position(joints, offset = 1, create_output='joint', name = None)
 		return output_obj
 	return [pv_posi_vector[0], pv_posi_vector[1], pv_posi_vector[2]]
 
+def pole_vector_space(ik_base_jnt, ik_ctrl, pv_space_grp, aim_vector, up_vector, mod_grp, constrain=False):
+	base, element, number, side, suffix = NAMER.extract(ik_ctrl)
+	pv_parent_loc = create_node('locator', base, element, number, side)
+	cmds.matchTransform(pv_parent_loc, ik_base_jnt)
+
+	aim_node_name = NAMER.format(base, element, number, side, 'aim')
+	cmds.aimConstraint(ik_ctrl, pv_parent_loc, aim=aim_vector, u=up_vector, wut = 'objectrotation', wu = up_vector, wuo = ik_ctrl, n = aim_node_name)
+	if constrain:
+		create_constraint([pv_parent_loc], pv_space_grp, 'pac')
+	cmds.parent(pv_parent_loc, mod_grp)
+	create_constraint([ik_base_jnt], pv_parent_loc, 'point')
+	return pv_parent_loc
+
 def attr_separator(ctrl, ln='extra', enum_name = '—————'):
 	ln = '_____' + ln
 	cmds.addAttr( ctrl, ln = ln, at = 'enum', en = enum_name , k = True )
@@ -1111,50 +1111,47 @@ def add_enum_space_switch( parent_spaces = ['r_pelvis_ctl'],
 							default_index = 1,
 							#mod_grp = None
 						):
-
-	# if not cmds.objExists('spaces_grp'):
-	# 	spaces_grp = create_node('group', 'spaces', None, None, None)
-	# 	if mod_grp:
-	# 		cmds.parent(spaces_grp, mod_grp)
-	# else:
-	# 	spaces_grp = 'spaces_grp'
 		
 	if world_space:
 		parent_spaces = [world_space] + parent_spaces 
 
 	enum_names = ':'.join(spaces_name)
-	cmds.addAttr(ctrl, ln = attr_name, at='enum', en=enum_names, dv=default_index, k=True )
+	if not cmds.attributeQuery(attr_name, node=ctrl, exists=True):
+		cmds.addAttr(ctrl, ln = attr_name, at='enum', en=enum_names, dv=default_index, k=True )
 
 	target_name, target_element, target_number, target_side, suffix = NAMER.extract(target) 
 	target_base_name = parser.get_base_name(target_name, first_name=True)
 	target_element = target_element if target_element else []
 
-	parent_con = create_constrain(parent_spaces, target, type=type, maintain_offset=True)[0][0]
+	parent_con = create_constraint(parent_spaces, target, type=type, maintain_offset=True)[0][0]
 
 	try:
 		cmds.setAttr(f'{parent_con}.interpType', 2)
 	except:pass
-	
+
 	if len(spaces_name) > 2:
-		for i, name in enumerate(spaces_name):
+		for i, name in enumerate(parent_spaces):
 			space_cdt = create_node(node_type='condition', base=target_name, elements=target_element+[name], number=target_number, side=target_side )
 			cmds.setAttr( f'{space_cdt}.st', i)
 			cmds.setAttr( f'{space_cdt}.ctr', 1)
 			cmds.setAttr( f'{space_cdt}.cfr', 0)
 			cmds.connectAttr(f'{ctrl}.{attr_name}', f'{space_cdt}.ft')
-			cmds.connectAttr(f'{space_cdt}.ocr', f'{parent_con}.{parent_spaces[i]}W{i}')
+			cmds.connectAttr(f'{space_cdt}.ocr', f'{parent_con}.{name}W{i}')
+
 	else:
 		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{parent_con}.{parent_spaces[1]}W1')
 		space_switch_rev = create_node(node_type='reverse', base=target_name, elements=target_element+[attr_name], number=target_number, side=target_side )
 		cmds.connectAttr(f'{ctrl}.{attr_name}', f'{space_switch_rev}.ix')
 		cmds.connectAttr(f'{space_switch_rev}.ox', f'{parent_con}.{parent_spaces[0]}W0')
 
+	return parent_con
+
 def over_and_out(module_name = '', output_name = ''):
 	cmds.select(cl=True)
 	output_name = output_name.replace('None', '')
 	print(f'Created\t{module_name}:\t\t{output_name}')
 
-def aim_follow(parent=None, upper_parent = None, target=None, aim='x', up='y', attr_name = None, ctrl = None, dv = 1):
+def aim_follow(parent=None, upper_parent = None, target=None, aim='x', up='y', up_obj = None, world_obj = None, attr_name = None, ctrl = None, dv = 1):
 	elem_name = [attr_name] or ['follow']
 
 	if target == 'upper':
@@ -1163,21 +1160,27 @@ def aim_follow(parent=None, upper_parent = None, target=None, aim='x', up='y', a
 
 	base, element, number, side, suffix = NAMER.extract(target)
 
-	locator = create_node('locator', base, element + elem_name, number, side)
-	cmds.matchTransform(locator, upper_parent)
+	follow_locator = create_node('locator', base, element + elem_name, number, side)
+	cmds.matchTransform(follow_locator, upper_parent)
 	aim_vector = axis_convert(aim, 'vector')
 	up_vector = axis_convert(up, 'vector')
 	up_str = axis_convert(up, 'absolute_letter')
-	create_constrain([upper_parent], locator, 'point')
+	create_constraint([parent], follow_locator, 'point')
+
+	if not up_obj:
+		up_obj = create_node('locator', base, element + elem_name + ['up'], number, side)
+		cmds.matchTransform(up_obj, parent)
+		create_constraint([parent], up_obj, 'parent')
 	
-	cmds.delete(cmds.aimConstraint(parent, locator, aimVector = aim_vector, upVector = up_vector, wut = 'objectrotation', wu = up_vector, wuo = parent, mo = False))
-	skip_axes = 'xyz'.replace(up_str,'')
-	skip_axes = [ax for ax in skip_axes]
-	cmds.aimConstraint(parent, locator, aimVector = aim_vector, upVector = up_vector, wut = 'objectrotation', wu = up_vector, wuo = parent, mo = False)#, skip = skip_axes)
+	#cmds.delete(cmds.aimConstraint(parent, follow_locator, aimVector = aim_vector, upVector = up_vector, wut = 'objectrotation', wu = up_vector, wuo = up_obj, mo = False))
 
-	create_local_world(local=locator, world=upper_parent, target=target, types=['translate', 'rotate'], attr_name=attr_name, ctrl=ctrl, dv=dv)
+	cmds.aimConstraint(parent, follow_locator, aimVector = aim_vector, upVector = up_vector, wut = 'objectrotation', wu = up_vector, wuo = up_obj, mo = False)
 
-	return locator
+	if not world_obj:
+		world_obj = upper_parent
+	create_local_world(local=follow_locator, world=upper_parent, target=target, types=['translate', 'rotate'], attr_name=attr_name, ctrl=ctrl, dv=dv)
+
+	return follow_locator, up_obj
 
 def joint_label(remove = None, remove_from_last = 2, force_on=False):
 	selection = cmds.ls(sl=True)
@@ -1227,7 +1230,7 @@ def create_connection(parent, target, connection_type='None'):
 	if connection_type == 'None':
 		return
 	if connection_type in ('point', 'parent', 'orient', 'scale', 'parentScale'):
-		create_constrain(parents=[parent], target=target, type=connection_type)
+		create_constraint(parents=[parent], target=target, type=connection_type)
 	elif connection_type == 'direct':
 		direct_connect([parent], [target])
 	elif 'matrix' in connection_type:
@@ -1284,7 +1287,25 @@ def create_xyz(objs=None, connection_type=None, scale=1, bp_jnt=False,):
 		else:
 			return grp, axis_ctrl
 
+def select_all_ctrls(main_ctrl_grp = 'Controllers_grp'):
+	'''
+		Select a controller in the scene and run script to select all ctrls.
+		The script will extract ctrl's suffix from the selected obj
+	'''
+	sel = cmds.ls(sl=True)[0]
+	suffix = sel.split('_')[-1]
+	suffix = f'_{suffix}'
 
+	all_crvs = cmds.listRelatives(main_ctrl_grp, ad = True, type='nurbsCurve')
+
+	ctrls = []
+	for crv in all_crvs:
+		if crv.endswith(f'{suffix}Shape'):
+			ctrl = cmds.listRelatives(crv, p=True)[0]
+			ctrls.append(ctrl)
+
+	cmds.select(ctrls)	
+	
 ########################################################
 # OLD VERSION
 
@@ -1395,4 +1416,9 @@ def object_rename(): #23Jun21
 	except:
 		pass
 
+'''
+original_list = [0, 1, 0]
+result = [x * 5 for x in original_list]
 
+print(result)  # Output: [0, 5, 0]
+'''

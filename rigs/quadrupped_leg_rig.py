@@ -101,7 +101,7 @@ class QuadruppedLeg(object):
 			switch_ctrl_grp = controller.offset_grps[0][0]
 			switch_ctrl_space_grp = controller.offset_grps[0][1]
 			
-			bb.create_constrain([self.lower_jnt], switch_ctrl_space_grp)
+			bb.create_constraint([self.lower_jnt], switch_ctrl_space_grp)
 			bb.create_guide_curve(switch_ctrl, self.joint_chain[2], switch_ctrl_grp)
 
 			fk_rig = fkr.FKRig( 
@@ -146,7 +146,7 @@ class QuadruppedLeg(object):
 		self.mod_grp = bb.create_node('group', self.rig_name, ['mod'], self.number, self.side)
 		self.jnt_grp = bb.create_node('group', self.rig_name, ['jnt'], self.number, self.side, p=self.mod_grp)
 
-		bb.create_constrain([self.ctrl_grp], self.mod_grp)
+		bb.create_constraint([self.ctrl_grp], self.mod_grp)
 
 		if 'fk' in (self.feature).lower():
 			self.fk_mod_grp = bb.create_node('group', self.rig_name, ['fk', 'mod'], self.number, self.side, p=self.mod_grp)
@@ -158,7 +158,7 @@ class QuadruppedLeg(object):
 		if self.mod_parent:
 			cmds.parent(self.mod_grp, self.mod_parent)
 		if self.upper_driver:
-			bb.create_constrain([self.upper_driver], self.ctrl_grp, 'parentScale')
+			bb.create_constraint([self.upper_driver], self.ctrl_grp, 'parentScale')
 
 	def duplicate_joint_chain(self):
 		elem_list = ['fk', 'ik', 'stretch']
@@ -398,7 +398,7 @@ class QuadruppedLeg(object):
 						deg=1 )
 		hock_ctrl = controller.ctrls[0]
 		hock_space_grp = controller.offset_grps[0][1]
-		bb.create_constrain([ik_ctrl], hock_space_grp, 'point')
+		bb.create_constraint([ik_ctrl], hock_space_grp, 'point')
 
 		# ---  Hock Heirarchy ----------------------
 		ik_hock_rot_zro_grp = bb.create_node('group', self.rig_name, ['hock', 'rot', 'zro'], self.number, self.side) 
@@ -407,23 +407,23 @@ class QuadruppedLeg(object):
 		cmds.matchTransform(ik_hock_rot_zro_grp, ik_end_jnt, pos=True)
 		#cmds.parent(knee_ikh, ik_hock_rot_grp)
 		#cmds.parent([ik_hock_rot_zro_grp, hock_ikh], ik_ctrl)
-		bb.create_constrain([ik_hock_rot_grp], knee_ikh, 'pac')
+		bb.create_constraint([ik_hock_rot_grp], knee_ikh, 'pac')
 		cmds.parent(knee_ikh, self.mod_grp)
 
 		if self.is_hind:
 			cmds.parent(ik_hock_rot_zro_grp, self.driver[2])
 			cmds.parent(hock_ikh, self.driver[3])
 			cmds.parent(driver_ikh, self.ik_mod_grp)
-			bb.create_constrain([ik_ctrl], driver_ikh, 'pac')
+			bb.create_constraint([ik_ctrl], driver_ikh, 'pac')
 			cmds.poleVectorConstraint(pv_ctrl, driver_ikh)
 		else:
-			bb.create_constrain([ik_ctrl], hock_ikh, 'pac')
+			bb.create_constraint([ik_ctrl], hock_ikh, 'pac')
 			cmds.parent(hock_ikh, self.mod_grp)
 			cmds.parent(ik_hock_rot_zro_grp, self.ctrl_grp)
-			bb.create_constrain([ik_ctrl], ik_hock_rot_zro_grp, 'point')
+			bb.create_constraint([ik_ctrl], ik_hock_rot_zro_grp, 'point')
 			cmds.poleVectorConstraint(pv_ctrl, knee_ikh)
 		
-		bb.create_constrain([ik_ctrl], ik_end_jnt, 'orc')
+		bb.create_constraint([ik_ctrl], ik_end_jnt, 'orc')
 
 		# ---  Hock Translation ----------------------
 		HOCK_MUL_VAL = -15
@@ -447,7 +447,7 @@ class QuadruppedLeg(object):
 
 		stretch_end_loc = bb.create_node('locator', self.rig_name, ['stretch', 'end'], self.number, self.side)
 		cmds.matchTransform(stretch_end_loc, stretch_end_jnt)
-		bb.create_constrain([ik_ctrl], stretch_end_loc, 'parent')
+		bb.create_constraint([ik_ctrl], stretch_end_loc, 'parent')
 		cmds.parent(stretch_end_loc, self.ik_mod_grp)
 
 		# Total lenght of each bone 
@@ -533,7 +533,7 @@ class QuadruppedLeg(object):
 			if i < 2:
 				#cmds.parent(roll_jnt, self.joint_chain[idx])
 				cmds.parent(roll_jnt, self.jnt_grp)
-				bb.create_constrain([self.joint_chain[idx]], roll_jnt, 'point')
+				bb.create_constraint([self.joint_chain[idx]], roll_jnt, 'point')
 			elif i > 2:
 				cmds.parent(roll_jnt, roll_jnt_map['follow'])
 		
@@ -563,7 +563,7 @@ class QuadruppedLeg(object):
 		cmds.matchTransform(roll_ikh, upper_ref_jnt)
 		for ax in 'XYZ':
 			cmds.setAttr( f'{roll_ikh}.poleVector{ax}', 0)
-		bb.create_constrain([upper_ref_jnt], roll_ikh, 'pac')
+		bb.create_constraint([upper_ref_jnt], roll_ikh, 'pac')
 		
 		# ---  Lower Leg Roll ----------------------
 		lower_ref_jnt = self.joint_chain[3]
@@ -572,7 +572,7 @@ class QuadruppedLeg(object):
 		cmds.matchTransform(roll_lower_loc, roll_lower_jnt)
 		#cmds.parent(roll_lower_loc, lower_ref_jnt)
 		cmds.parent(roll_lower_loc, self.jnt_grp)
-		bb.create_constrain([lower_ref_jnt], roll_lower_loc, 'pac')
+		bb.create_constraint([lower_ref_jnt], roll_lower_loc, 'pac')
 		cmds.move(*move_coor, roll_lower_loc, r=True, os=True, wd=True)
 		# Aim
 		neg_aim_vector = [ v*-1 for v in self.aim_vector]
@@ -581,8 +581,8 @@ class QuadruppedLeg(object):
 
 		# Clean up 
 		cmds.delete(pv_loc)
-		bb.create_constrain([self.ctrl_grp], follow_jnt)
-		bb.create_constrain([self.ctrl_grp], self.stretch[0])
+		bb.create_constraint([self.ctrl_grp], follow_jnt)
+		bb.create_constraint([self.ctrl_grp], self.stretch[0])
 
 
 # from bbTools.rigs import quadruped_leg_rig as qdr

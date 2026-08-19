@@ -82,9 +82,9 @@ class LipRig(FaceModule):
 		
 			lip_ctrl_grp = lip_ctrl_grp[0]
 			if part == 'upper':
-				bb.create_constrain([self.corner_parents[0]], lip_ctrl_grp)
+				bb.create_constraint([self.corner_parents[0]], lip_ctrl_grp)
 			else:
-				bb.create_constrain([self.corner_parents[1]], lip_ctrl_grp)
+				bb.create_constraint([self.corner_parents[1]], lip_ctrl_grp)
 			bb.direct_connect([lip_ctrl_grp], [lip_jnt_grp])
 
 		for jnt in self.corner_jnts:
@@ -221,10 +221,10 @@ class LipRig(FaceModule):
 
 					main_ctrl = 'lip_upper_main_ctl' if is_upper else 'lip_lower_main_ctl'
 					if num is None:
-						bb.create_constrain([main_ctrl], nurb_ctrl_grp[0], 'parent')
+						bb.create_constraint([main_ctrl], nurb_ctrl_grp[0], 'parent')
 					else:
 						side_ctrl = f'{sub_side}_lip_corner_ctl'
-						bb.create_constrain([main_ctrl, side_ctrl], nurb_ctrl_grp[0], 'parent')
+						bb.create_constraint([main_ctrl, side_ctrl], nurb_ctrl_grp[0], 'parent')
 
 	def lip_zip_rig(self):
 		'''

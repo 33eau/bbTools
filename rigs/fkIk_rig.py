@@ -216,7 +216,7 @@ class FkIkRig:
 			bb.snap([self.end_orient_loc], fk_grps[-1][0] )
 
 		for ctrl, jnt in zip(self.fk_ctrls, fk_jnts):
-			bb.create_constrain([ctrl], jnt, self.connection_type)
+			bb.create_constraint([ctrl], jnt, self.connection_type)
 		
 		if self.setting_obj is None:
 			self.setting_obj = self.ctrl_parent

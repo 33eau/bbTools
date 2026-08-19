@@ -169,12 +169,12 @@ class FkSplineRig:
 		cmds.parent(self.mod_grp, self.mod_parent)
 		cmds.parent(self.bind_jnts[0], self.bind_parent)
 		if self.upper_driver:
-			bb.create_constrain([self.upper_driver], self.ctrl_grp, 'parentScale')
-			bb.create_constrain([self.upper_driver], self.mod_cons_grp, 'parentScale')
+			bb.create_constraint([self.upper_driver], self.ctrl_grp, 'parentScale')
+			bb.create_constraint([self.upper_driver], self.mod_cons_grp, 'parentScale')
 		
 		for i, jnt in enumerate(rig_jnts):
 			if self.connection_type == 'matrix_parent':
 				bb.matrix_constrain(jnt, self.bind_jnts[i])
 			else:
-				bb.create_constrain([jnt], self.bind_jnts[i], 'pac')
+				bb.create_constraint([jnt], self.bind_jnts[i], 'pac')
 

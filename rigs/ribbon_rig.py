@@ -212,12 +212,12 @@ class RibbonRig:
 		
 		# —————————————————————————————————————
 		# ========= Parent Inverse Mtx =========
-		bb.create_constrain([self.joints[1]], mid_grp, type = 'point')
-		mid_orc = bb.create_constrain(self.joints[:2], mid_grp, type = 'orient')[0][0]
+		bb.create_constraint([self.joints[1]], mid_grp, type = 'point')
+		mid_orc = bb.create_constraint(self.joints[:2], mid_grp, type = 'orient')[0][0]
 		cmds.setAttr(f'{mid_orc}.interpType', 2)
 
-		mid_up_orc = bb.create_constrain([self.joints[0]], mid_up_joint, type = 'orient')[0][0]
-		mid_lo_orc = bb.create_constrain([self.joints[1]], mid_lo_joint, type = 'orient')[0][0]
+		mid_up_orc = bb.create_constraint([self.joints[0]], mid_up_joint, type = 'orient')[0][0]
+		mid_lo_orc = bb.create_constraint([self.joints[1]], mid_lo_joint, type = 'orient')[0][0]
 		cmds.connectAttr(f'{self.mid_ctrl}.parentInverseMatrix[0]', f'{mid_up_orc}.constraintParentInverseMatrix', f=True)
 		cmds.connectAttr(f'{self.mid_ctrl}.parentInverseMatrix[0]', f'{mid_lo_orc}.constraintParentInverseMatrix', f=True)
 
@@ -236,7 +236,7 @@ class RibbonRig:
 			bb.snap(parents=[self.end_orient_loc], target=twist_grp[0])
 		else:
 			bb.snap(parents=[self.joints[2]], target=twist_grp[0])
-		bb.create_constrain([self.joints[2]], twist_grp[0], type='parent')
+		bb.create_constraint([self.joints[2]], twist_grp[0], type='parent')
 		neg_aim_axis_vector = [ax * -1 for ax in aim_axis_vector]
 		cmds.aimConstraint(self.joints[1], twist_grp[1], aimVector=neg_aim_axis_vector, upVector=neg_aim_axis_vector, worldUpType= 'object', worldUpObject = self.joints[1], mo = True)
 
@@ -246,17 +246,17 @@ class RibbonRig:
 		no_twist_grp = bb.create_offset_group([no_twist_jnt], ['Zro', 'Offset'])
 		no_twist_grp= no_twist_grp[no_twist_jnt]
 		bb.snap(parents=[self.joints[0]], target=no_twist_grp[0])
-		bb.create_constrain([self.joints[0]], no_twist_grp[0], type='point')
+		bb.create_constraint([self.joints[0]], no_twist_grp[0], type='point')
 		cmds.aimConstraint(self.joints[1], no_twist_grp[1], aimVector=aim_axis_vector, upVector=up_axis_vector, worldUpType= 'objectrotation', mo = True, wuo = self.upper_driver, wu = up_axis_vector)
 
 		# ————————————————————————————
 		# ========= Organize =========
-		bb.create_constrain(self.joints[:2], up_grp, type = 'point')
-		up_orc = bb.create_constrain([self.joints[0], no_twist_jnt], up_grp, type = 'orient')[0][0]
+		bb.create_constraint(self.joints[:2], up_grp, type = 'point')
+		up_orc = bb.create_constraint([self.joints[0], no_twist_jnt], up_grp, type = 'orient')[0][0]
 		cmds.setAttr(f'{up_orc}.interpType', 2)
 
-		bb.create_constrain(self.joints[1:], lo_grp[0], type = 'point')
-		lo_orc = bb.create_constrain(self.joints[1:], lo_grp[0], type = 'orient')[0][0]
+		bb.create_constraint(self.joints[1:], lo_grp[0], type = 'point')
+		lo_orc = bb.create_constraint(self.joints[1:], lo_grp[0], type = 'orient')[0][0]
 		cmds.setAttr(f'{lo_orc}.interpType', 2)
 		cmds.aimConstraint(self.joints[1], lo_grp[1], aimVector=neg_aim_axis_vector, upVector=cross_axis_vector, worldUpType= 'None', mo = True)
 
