@@ -6,12 +6,15 @@ from ..core.data import constants as constants
 from ..core.naming import namer_factory as naming
 from ..core.naming import current_project
 from ..core.naming import parser
+from ..core.data import rig_config as cfg
+
 reload(bb )
 reload(bc)
 reload(constants)
 reload(naming)
 reload(current_project)
 reload(parser)
+reload(cfg)
 
 NAME_TEMPLATE = current_project.PROJECT
 NAMER = naming.get_namer(NAME_TEMPLATE)
@@ -47,6 +50,7 @@ class IkRig:
 				default_ik_end = 0,
 				base_parent_type = 'orient',
 				end_stretch = False,
+				pv_shape = 'locator',
 				is_leg = False,
 				**controller_kwargs
 				):
@@ -79,6 +83,7 @@ class IkRig:
 		self.default_ik_end =  default_ik_end
 		self.base_parent_type =  base_parent_type
 		self.end_stretch =  end_stretch
+		self.pv_shape = pv_shape
 		self.is_leg =  is_leg
 
 		self.number = parser.find_number(self.rig_name)
@@ -87,10 +92,12 @@ class IkRig:
 		else:
 			self.side =  side
 		
+		self.ik_end_shape = cfg.ik_leg_shape if self.is_leg else self.ctrl_shape
+
 		self.ctrl_grp = None
 		self.mod_grp = None
 		self.ctrls = None
-
+				
 		self._build()
 		#bb.over_and_out('IkRig', self.rig_name)
 
@@ -134,18 +141,23 @@ class IkRig:
 		self.ik_base_ctrl = ik_base_controller.ctrls[0]
 		ik_base_grp = ik_base_controller.offset_grps[0]
 
+		if self.is_leg:
+			self.ctrl_move = cmds.xform(self.joints[-1], ws=True, q=True, t=True)
+			self.ctrl_move = [0, self.ctrl_move[1]*(-1),0]
+
 		ikh_end_controller = bc.Controller(objects = [ikh],
 					name=self.rig_name+'_ik',
 					side = self.side,
 					offset_names = ['zro', 'space', 'offset'],
 					main_ctrl_grp = self.ctrl_grp,
-					shape = self.ctrl_shape,
+					shape = self.ik_end_shape,
 					color = self.color,
 					connection_type = 'None',
 					rotate_order = 'xyz',
 					name_template=NAME_TEMPLATE,
 					side_case='lower',
 					scale = self.scale,
+					move = self.ctrl_move,
 					** self.controller_kwargs
 					)
 		self.ik_end_ctrl = ikh_end_controller.ctrls[0]
@@ -158,8 +170,7 @@ class IkRig:
 				for ax in inv_axes:
 					cmds.setAttr(f'{ik_end_grps[-1]}.s{ax}', -1)
 
-		# ————————————————————————————————————————————————————
-		##################### Base Orient #####################
+		# ---  Base Orient ----------------------
 		if self.base_orient_loc is None:
 			base_orient_loc = bb.create_node('locator', self.rig_name, ['base', 'orient'], None, self.side)
 			bb.snap([self.joints[0]], base_orient_loc)
@@ -168,7 +179,7 @@ class IkRig:
 		else:
 			bb.snap([self.base_orient_loc], ik_base_grp[0])
 
-		##################### End Orient #####################
+		# ---  End Orient ----------------------
 		if self.end_orient_loc is None:
 			end_orient_loc = bb.create_node('locator', self.rig_name, ['end', 'orient'], None, self.side)
 			bb.snap([self.joints[-1]], end_orient_loc)
@@ -176,15 +187,13 @@ class IkRig:
 			cmds.delete(end_orient_loc)
 		else:
 			bb.snap([self.end_orient_loc], ik_end_grps[0])
-		# ————————————————————————————————————————————————————
 
 		bb.add_enum_space_switch( [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_base_grp[0], ctrl= self.ik_base_ctrl, type = self.base_parent_type, default_index=self.default_ik_base)	
 		bb.add_enum_space_switch(parent_spaces = [self.upper_driver], world_space=self.world_space, attr_name='follow', spaces_name=['world', 'local'], target = ik_end_grps[1], ctrl=self.ik_end_ctrl, type = 'parent', default_index= self.default_ik_end)
 		#bb.create_constrain([self.ik_end_ctrl], ikh, 'point')
 		node_name = NAMER.format(self.rig_name, ['pv'], self.number, self.side, 'loc')
 
-		# ————————————————————————————————————————————————————
-		##################### End Rotation #####################
+		# ---  End Rotation ----------------------
 		if self.end_rotation_jnts:
 			end_rot_ikhs = []
 			cmds.parent(self.end_rotation_jnts[1:], self.joints[-1])
@@ -196,17 +205,17 @@ class IkRig:
 				if len(end_rot_ikhs) > 0:
 					cmds.parent(end_rot_ikh, end_rot_ikhs[-1])
 				else:
-					bb.create_constrain([self.ik_end_ctrl], end_rot_ikh, 'parent')
+					bb.create_constraint([self.ik_end_ctrl], end_rot_ikh, 'parent')
 					# cmds.parent(end_rot_ikh, self.mod_grp)
 					cmds.parent(end_rot_ikh, ikh)
 			cmds.connectAttr(f'{self.ik_end_ctrl}.s', f'{self.joints[-1]}.s')
 
-		# ————————————————————————————————————————————————————
+		#
 
 		ik_pv_controller = bc.Controller(objects = [self.pole_vector_jnt],
 								offset_names = ['zro', 'space', 'Offset'],
 								main_ctrl_grp = self.ctrl_grp,
-								shape = 'locator',
+								shape = self.pv_shape,
 								color = self.color,
 								connection_type = 'None',
 								rotate_order = 'xyz',
@@ -223,13 +232,26 @@ class IkRig:
 		cmds.poleVectorConstraint(self.ik_pv_ctrl, ikh, n=node_name)
 		bb.create_guide_curve(self.ik_pv_ctrl, self.joints[1], parent=self.ctrl_grp, curve_elem='pv')
 		bb.attr_separator(ctrl=self.ik_pv_ctrl)
-		follow_loc = bb.aim_follow(parent=self.ik_end_ctrl, upper_parent = self.ik_base_ctrl, target=self.ik_pv_grp[0][1], aim=self.aim_axis, up=self.up_axis, attr_name = 'follow', ctrl = self.ik_pv_ctrl, dv = 0)
-		cmds.parent(follow_loc, self.mod_grp)
-		bb.matrix_constrain(self.ik_base_ctrl, follow_loc, type='parent', store_orig = False, channels = ['translate', 'scale'])
+
+		pv_follow_loc = bb.create_node('locator', self.rig_name, ['pv', 'follow'], None, self.side)
+		cmds.matchTransform(pv_follow_loc, self.joints[0])
+		bb.create_constraint([self.ik_end_ctrl, self.ik_base_ctrl], pv_follow_loc, 'point')
+
+		pv_follow_up_loc = bb.create_node('locator', self.rig_name, ['pv', 'up'], None, self.side)
+		cmds.matchTransform(pv_follow_up_loc, self.joints[-1])
+		bb.create_constraint([self.ik_end_ctrl], pv_follow_up_loc)
+
+		aim_axis_vector = bb.axis_convert(self.aim_axis, 'vector')
+		up_axis_vector = bb.axis_convert(self.up_axis, 'vector')
+		cmds.aimConstraint(self.ik_end_ctrl, pv_follow_loc, aim=aim_axis_vector, u=up_axis_vector, wut='objectrotation', wu=up_axis_vector, wuo=pv_follow_up_loc, mo=False)
+		cmds.parent([pv_follow_loc, pv_follow_up_loc], self.mod_grp)
+		bb.create_local_world(local=pv_follow_loc, world=self.upper_driver, target=pv_space_grp, types=['translate', 'rotate'], attr_name='localWorld', ctrl=self.ik_pv_ctrl, dv=0)
 		self.ctrls = [self.ik_base_ctrl, self.ik_pv_ctrl, self.ik_end_ctrl]
 
 		if self.stretch:
 			self.do_strech()
+
+		self.ikh = ikh
 		
 	def do_strech(self):
 		ctrls = [self.ik_base_ctrl, self.ik_end_ctrl]
@@ -245,8 +267,8 @@ class IkRig:
 		end_loc = position_locators[1]
 		cmds.parent(base_loc, self.mod_grp)
 		cmds.parent(end_loc, self.pivot_mod_grp)
-		bb.create_constrain( parents=[self.ik_base_ctrl], target=base_loc, type="parent")
-		bb.create_constrain( parents=[self.ik_end_ctrl], target=self.pivot_mod_grp, type="parent")
+		bb.create_constraint( parents=[self.ik_base_ctrl], target=base_loc, type="parent")
+		bb.create_constraint( parents=[self.ik_end_ctrl], target=self.pivot_mod_grp, type="parent")
 				
 		real_time_distant_dbt = bb.create_node( node_type='distanceBetween', base=self.rig_name, elements=[self.stretch_attr], number=self.number, side=self.side, namer=NAMER)
 		cmds.connectAttr(f'{base_loc}.worldPosition[0]',  f'{real_time_distant_dbt}.p1')
@@ -396,7 +418,9 @@ class IkRig:
 			# cmds.connectAttr(f'{lock_switch_bcl}.op{lock_channels[i]}', f'{self.joints[i]}.s{self.aim_attr}', f=True)
 	
 		for i, ctrl in enumerate(self.ctrls):
-			bb.create_constrain([ctrl], point_locs[i], type='pac', maintain_offset=False)
+			bb.create_constraint([ctrl], point_locs[i], type='pac', maintain_offset=False)
+
+		self.stretch_end_loc = end_loc
 
 
 ### Example use:
