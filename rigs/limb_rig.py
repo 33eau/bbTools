@@ -6,9 +6,11 @@ from ..core.controllers import shape_color
 from ..core.naming import namer_factory as naming
 from ..core.naming import current_project
 from ..core.naming import parser
-from ..core import bbIkRig as ik
+from ..rigs import ik_rig as ik
 from . import fk_rig as fk
 from . import ribbon_rig as rbn
+from ..core.data import rig_config as cfg
+
 
 reload(bb)
 reload(bc)
@@ -18,21 +20,23 @@ reload(parser)
 reload(ik)
 reload(fk)
 reload(rbn)
+reload(cfg)
 
 NAME_TEMPLATE = current_project.PROJECT
 NAMER = naming.get_namer(NAME_TEMPLATE)
 
-FK_CTRL_SHAPE = 'crossCircle'
-IK_CTRL_SHAPE = 'cube'
-IK_PV_CTRL_SHAPE = 'diamond'
-IK_END_CTRL_SHAPE = 'cube'
-SETTING_CTRL_SHAPE = 'diamond'#'hexagon3d'
-RIBBON_CTRL_SHAPE = 'squareRound'
+FK_CTRL_SHAPE = cfg.fk_ctrl_shape
+IK_CTRL_SHAPE = cfg.ik_base_ctrl_shape
+IK_PV_CTRL_SHAPE = cfg.pv_ctrl_shape
+IK_END_CTRL_SHAPE = cfg.ik_ctrl_shape
+SETTING_CTRL_SHAPE = cfg.switch_ctrl_shape
+RIBBON_CTRL_SHAPE = cfg.ribbon_ctrl_shape
 NUM_NURB_SUBDIVISION = 8
 BIND_ELEM = 'bnd'
 
-FOOT_FK_CTRL_SHAPE = 'ballFoot'
-FOOT_IK_CTRL_SHAPE = 'ballFoot'
+FOOT_FK_CTRL_SHAPE = cfg.foot_ctrl_shape
+FOOT_IK_CTRL_SHAPE = cfg.foot_ctrl_shape
+SETTING_CTRL_COLOR = cfg.setting_color
 
 class LimbRig:
 	def __init__(self,
@@ -116,7 +120,7 @@ class LimbRig:
 				self.parts_name.append(base_name)
 		else:
 			self.parts_name =  parts_name
-		
+
 		self.up_vector = bb.axis_convert(up_axis, 'vector')
 		default_shape_rotation = [item * 90 for item in self.up_vector]
 		self.shape_rotation = controller_kwargs.get('shape_rotation', default_shape_rotation)
@@ -140,8 +144,8 @@ class LimbRig:
 		self.mod_grp = bb.create_node('group', base, element + ['Mod'], number, self.side, p=self.mod_parent)
 		jnt_grp = bb.create_node('group', base, element + ['Jnt'], number, self.side, p=self.mod_grp)
 		if self.upper_driver:
-			bb.create_constrain([self.upper_driver], self.ctrl_grp, 'parentScale')
-			bb.create_constrain([self.upper_driver], jnt_grp, 'parentScale')
+			bb.create_constraint([self.upper_driver], self.ctrl_grp, 'parentScale')
+			bb.create_constraint([self.upper_driver], jnt_grp, 'parentScale')
 
 		generated_joints = bb.duplicate_joint_chain(self.joints, add_elements=['fk', 'ik', 'rig', BIND_ELEM], remove_element='tmp')
 		fk_jnts = generated_joints['fk']
@@ -153,8 +157,7 @@ class LimbRig:
 		if self.bind_parent:
 			cmds.parent(bind_jnts[0], self.bind_parent)
 
-		# ————————————————————————————————————————————————————
-		##################### End Rotation #####################
+		# ---  End Rotation ----------------------
 		if self.end_rotation_jnts:
 			end_generated_joints = bb.duplicate_joint_chain(self.end_rotation_jnts[1:], add_elements=['fk', 'ik', 'rig', BIND_ELEM], remove_element='tmp')
 			end_rotation_jnts = [rig_jnts[-1]] + end_generated_joints['ik']
@@ -172,8 +175,8 @@ class LimbRig:
 			end_rotation_jnts = None
 			fk_rig_jnts = fk_jnts
 			rig_end_joints = True
-		# ————————————————————————————————————————————————————
-
+		# 
+		
 		ik_rig = ik.IkRig( joints = ik_jnts,
 						pole_vector_jnt = self.pole_vector_jnt,
 						end_rotation_jnts = end_rotation_jnts,
@@ -199,11 +202,14 @@ class LimbRig:
 						upper_driver = self.upper_driver,
 						default_ik_base = self.default_ik_base,
 						default_ik_end = self.default_ik_end,
+						pv_shape = IK_PV_CTRL_SHAPE,
 						is_leg=self.is_leg
 						)
 		ik_grps = ik_rig.mod_grp
 		self.pivot_mod_grp = ik_rig.pivot_mod_grp
 		self.ik_end_ctrl = ik_rig.ik_end_ctrl
+		self.stretch_end_loc = ik_rig.stretch_end_loc
+		self.leg_ikh = ik_rig.ikh
 
 		fk_rig = fk.FKRig( 
 						joints=fk_rig_jnts,
@@ -227,13 +233,14 @@ class LimbRig:
 		fk_ctrls = fk_rig.ctrls	
 		fk_grps = fk_rig.grps	
 
-		if self.end_orient_loc:
-			bb.snap([self.end_orient_loc], fk_grps[-1][0] )
+		if not self.is_leg:
+			if self.end_orient_loc:
+				bb.snap([self.end_orient_loc], fk_grps[-1][0] )
 
 		for ctrl, jnt in zip(fk_ctrls, fk_rig_jnts):
-			bb.create_constrain([ctrl], jnt, 'parent')
+			bb.create_constraint([ctrl], jnt, 'parent')
 
-		bb.create_constrain([fk_rig.end_grp], fk_rig_jnts[-1], 'parentScale')
+		bb.create_constraint([fk_rig.end_grp], fk_rig_jnts[-1], 'parentScale')
 
 		bb.create_local_world(local=self.upper_driver, 
 						world=self.world_space, 
@@ -242,14 +249,13 @@ class LimbRig:
 						attr_name='worldOrient', 
 						ctrl=fk_ctrls[0], 
 						dv=1.0)
-
 		
 		setting_controller = bc.Controller( 
 							objects = [self.setting_jnt],
 							main_ctrl_grp = self.ctrl_grp,
 							shape = SETTING_CTRL_SHAPE,
-							color = 'orange',
-							scale = self.scale * 0.4,
+							color = SETTING_CTRL_COLOR,
+							scale = self.scale * 0.2,
 							line_width = 1.25,
 							connection_type = 'None',
 							shape_rotation = [0,0,0]
@@ -259,8 +265,8 @@ class LimbRig:
 
 		bb.create_guide_curve(ctrl = setting_ctrl, target = rig_jnts[2], parent = self.ctrl_grp, curve_elem = '')
 		bb.attr_separator(ctrl=setting_ctrl)
-		follow_loc = bb.aim_follow(parent=rig_jnts[2], upper_parent = rig_jnts[1], target=setting_grp, aim=self.aim_axis, up=self.up_axis, attr_name = 'follow', ctrl = setting_ctrl, dv = 0)
-		cmds.parent(follow_loc, jnt_grp)
+		follow_locator, up_obj = bb.aim_follow(parent=rig_jnts[2], upper_parent = rig_jnts[1], target=setting_grp, aim=self.aim_axis, up=self.up_axis, attr_name = 'follow', ctrl = setting_ctrl, dv = 0)
+		cmds.parent(follow_locator, up_obj, self.mod_grp)
 
 		bb.fk_ik_switch(
 			parents_fk = fk_jnts,
@@ -275,8 +281,6 @@ class LimbRig:
 			default_value = self.default_fkIk
 			)
 
-		# for rig_jnt, bind_jnt in zip(rig_jnts, bind_jnts):
-		# 	bb.create_constrain([rig_jnt], bind_jnt, 'parentScale')
 		for rig_jnt, bind_jnt in zip(rig_jnts, bind_jnts):
 			bb.matrix_constrain(rig_jnt, bind_jnt, channels=['translate', 'rotate'])
 		
@@ -296,7 +300,7 @@ class LimbRig:
 			for jnt in self.end_rotation_jnts:
 				cmds.connectAttr(f'{self.ik_end_ctrl}.s', f'{jnt}.s')
 
-		# Ribbon Rig
+		# ---  Ribbon Rig ----------------------
 		if self.ribbon:
 			cross_axis = bb.axis_convert(self.aim_axis, 'cross_letter', self.up_axis)
 			ribbon_rig = rbn.RibbonRig(joints = rig_jnts,
@@ -318,8 +322,8 @@ class LimbRig:
 							global_scale = self.global_scale,
 							**self.controller_kwargs)
 			if self.upper_driver:
-				bb.create_constrain([self.upper_driver], ribbon_rig.ctrl_grp, 'parentScale')
-				bb.create_constrain([self.upper_driver], ribbon_rig.jnts_grp, 'parentScale')
+				bb.create_constraint([self.upper_driver], ribbon_rig.ctrl_grp, 'parentScale')
+				bb.create_constraint([self.upper_driver], ribbon_rig.jnts_grp, 'parentScale')
 		
 		fk_jnts = fk_rig_jnts
 		if self.end_rotation_jnts:
@@ -391,8 +395,8 @@ class LimbRig:
 		fk_grps = fk_rig.grps[0]
 		fk_end_grp = fk_rig.end_grp
 
-		bb.create_constrain([fk_ctrl], foot_joints[0], 'parent')
-		bb.create_constrain([fk_end_grp], foot_joints[1], 'parent')
+		bb.create_constraint([fk_ctrl], foot_joints[0], 'parent')
+		bb.create_constraint([fk_end_grp], foot_joints[1], 'parent')
 
 		# ————————————————————————————————————————————————————
 		##################### Ik Rig #####################
@@ -456,9 +460,9 @@ class LimbRig:
 		cmds.parent(piv_grp, ball_ik_ctrl)
 
 		cmds.delete(self.pivot_mod_grp, constraints=True)
-		bb.create_constrain([toe_ik_ctrl], toe_ikh)
-		bb.create_constrain([piv_grp], self.pivot_mod_grp)
-		bb.create_constrain([toe_ik_ctrl], foot_ik_jnts[0], 'scale')
+		bb.create_constraint([toe_ik_ctrl], toe_ikh)
+		bb.create_constraint([piv_grp], self.pivot_mod_grp)
+		bb.create_constraint([toe_ik_ctrl], foot_ik_jnts[0], 'scale')
 
 		cmds.connectAttr(f'{self.ik_end_ctrl}.s', f'{self.ik_jnts[-1]}.s')
 		
@@ -557,3 +561,239 @@ class LimbRig:
 			setup_name = None,
 			default_value = None
 			)
+
+	def foot_roll(self, 
+					foot_crv = None,
+					foot_ctrl_pos_jnt = None,
+					ball_bp_jnt = None,
+					bank_angle = [],
+					roll_angle = []
+			): #26Aug19
+
+		ankle_ik_jnt = self.ik_jnts[-1]
+		upper_bind_jnt = self.bind_jnts[-1]
+		ik_ctrl = self.ik_end_ctrl
+		leg_ikh = self.leg_ikh
+		limb_ctrl_grp = self.ctrl_grp
+		limb_mod_grp = self.mod_grp
+
+		base, element, number, side, suffix = NAMER.extract(foot_crv)
+		ctrl_grp = bb.create_node('group', base, element + ['ctrl'], number, side, p=limb_ctrl_grp)
+		mod_grp = bb.create_node('group', base, element + ['mod'], number, side, p=limb_mod_grp)
+		jnt_grp = bb.create_node('group', base, element + ['jnt'], number, side, p=mod_grp)
+
+		cmds.xform(foot_crv, cp=True)
+		foot_crv_bb = cmds.xform(foot_crv, bb=True, q=True)
+		min_x = foot_crv_bb[0]
+		min_z = foot_crv_bb[2]
+		max_x = foot_crv_bb[3]
+		max_z = foot_crv_bb[5]
+		limit_x_val = (max_x - min_x)/2
+		limit_z_val = (max_z - min_z)/2
+
+		# ---  Create Reverse Foot Roll Joints ----------------------
+		reverse_jnt_tokens = ['main', 'piv', 'inv', 'heel', 'toe', 'ball', 'ankle']
+		jnt_parent = jnt_grp
+		reverse_jnts = []
+		for token in reverse_jnt_tokens:
+			jnt = bb.create_node('joint', base, [token, 'rev'], number, side, rad = 0.5)
+			cmds.matchTransform(jnt, foot_crv)
+			cmds.delete(cmds.orientConstraint(ankle_ik_jnt, jnt, mo=False))
+			cmds.makeIdentity( jnt, a=True, r=True, n=0, pn =1)
+			cmds.parent(jnt, jnt_parent)
+			jnt_parent = jnt
+			reverse_jnts.append(jnt)
+
+		# ---  Position Toe And Heel Joint At Min/max Z Value ----------------------
+		for i, val in enumerate([min_z, max_z]):
+			current_posi = cmds.xform(reverse_jnts[3+i], ws=True, q=True, t=True)
+			cmds.xform(reverse_jnts[3+i], t=[current_posi[0], current_posi[1], val], ws=1)
+
+		main_jnt, piv_jnt, inv_jnt, heel_jnt, toe_jnt, ball_jnt, ankle_jnt = reverse_jnts
+		cmds.matchTransform(ball_jnt, ball_bp_jnt, pos=True)
+		cmds.matchTransform(ankle_jnt, ankle_ik_jnt, pos=True)
+		cmds.makeIdentity( ball_jnt, a=True, r=True, n=0, pn =1)
+		cmds.makeIdentity( ankle_jnt, a=True, r=True, n=0, pn =1)
+
+		# ---  Create Ik Jnt ----------------------
+		ball_ik_jnt = bb.create_node('joint', base, ['ball'], number, side)
+		cmds.matchTransform(ball_ik_jnt, ball_bp_jnt, pos=True)
+		cmds.parent(ball_ik_jnt, ankle_ik_jnt)
+		toe_ik_jnt = bb.create_node('joint', base, ['toe'], number, side)
+		cmds.matchTransform(toe_ik_jnt, toe_jnt)
+		cmds.parent(toe_ik_jnt, ball_ik_jnt)
+
+		# ---  Create Ikh ----------------------
+		ball_ikh, ball_eff = bb.create_node('ikSc', base, ['ball'], number, side, sj=ankle_ik_jnt, ee=ball_ik_jnt)
+		toe_ikh, toe_eff = bb.create_node('ikSc', base, ['toe'], number, side, sj=ball_ik_jnt, ee=toe_ik_jnt)
+		cmds.parent(ball_ikh, ball_jnt)
+		cmds.parent(toe_ikh, toe_jnt)
+
+		# ---  Create Bind Jnts ----------------------
+		ball_bnd_jnt = bb.create_node('joint', base, ['ball', 'bnd'], number, side)
+		cmds.matchTransform(ball_bnd_jnt, ball_bp_jnt, pos=True)
+		cmds.parent(ball_bnd_jnt, upper_bind_jnt)
+		bb.create_constraint([ball_ik_jnt], ball_bnd_jnt)
+		toe_bnd_jnt = bb.create_node('joint', base, ['toe', 'bnd'], number, side)
+		cmds.matchTransform(toe_bnd_jnt, toe_ik_jnt, pos=True)
+		cmds.parent(toe_bnd_jnt, ball_bnd_jnt)
+		bb.create_constraint([toe_ik_jnt], toe_bnd_jnt)
+
+		# ---  Create Ctrl ----------------------
+		foot_frame_name = NAMER.format(base, element+['frame'], number, side, suffix)
+		ctrl_frame_crv = cmds.duplicate(foot_crv, n=foot_frame_name)[0]
+		cmds.matchTransform(ctrl_frame_crv, foot_ctrl_pos_jnt)
+		cmds.setAttr( f'{ctrl_frame_crv}.ove', 1)
+		cmds.setAttr( f'{ctrl_frame_crv}.overrideDisplayType', 1)
+
+		foot_ref_name = NAMER.format(base, element+['ref'], number, side, suffix)
+		foot_ref_crv = cmds.duplicate(ctrl_frame_crv, n=foot_ref_name)[0]
+		bb.scale_shape(foot_ref_crv, scale=0.75)
+		cmds.setAttr( f'{foot_ref_crv}.v', 0, l=True)
+
+		controller = bc.Controller(objects = [foot_ctrl_pos_jnt],
+				main_ctrl_grp = ctrl_grp,
+				name = base,
+				side = side,
+				offset_names = ['offset'],
+				shape = 'sphere',
+				color = 'side',
+				scale = 0.1,
+				line_width = 1.0,
+				gimbal = False,
+				connection_type = 'None',
+				rotate_order = 'yxz',
+				lock_attrs = ['ty', 'sx', 'sy', 'sz'],
+				deg=1)
+
+		foot_ctrl = controller.ctrls[0]
+		foot_ctrl_grp = controller.offset_grps[0][0]
+		cmds.parent([ctrl_frame_crv, foot_ref_crv], ctrl_grp)
+
+		bb.attr_separator(foot_ctrl)
+		cmds.addAttr( foot_ctrl, ln = 'frameVis', at = 'enum', en = 'OFF:ON' , k = True, dv = 1)
+		cmds.connectAttr(f'{foot_ctrl}.frameVis', f'{ctrl_frame_crv}.v')
+		cmds.transformLimits(foot_ctrl, etx=(1, 1), etz=(1, 1))
+		cmds.transformLimits(foot_ctrl, tx=[limit_x_val*-1, limit_x_val], tz=[limit_z_val*-1, limit_z_val])
+
+		# ---  Piv Calculate ----------------------
+		ctrl_pos_dcm = bb.create_node('decomposeMatrix', base, ['pos'], number, side)
+		ctrl_shp = cmds.listRelatives(foot_ctrl, s=True)[0]
+		cmds.connectAttr(f'{ctrl_shp}.worldMatrix[0]', f'{ctrl_pos_dcm}.inputMatrix')
+
+		ref_pos_npc = bb.create_node('nearestPointOnCurve', base, ['pos'], number, side)
+		cmds.connectAttr(f'{ctrl_pos_dcm}.outputTranslate', f'{ref_pos_npc}.inPosition')
+		cmds.connectAttr(f'{foot_ref_crv}Shape.worldSpace[0]', f'{ref_pos_npc}.inputCurve')
+
+		piv_pos_poc = bb.create_node('pointOnCurveInfo', base, ['piv', 'pos'], number, side)
+		cmds.connectAttr(f'{ref_pos_npc}.parameter', f'{piv_pos_poc}.parameter')
+		cmds.connectAttr(f'{foot_crv}Shape.worldSpace[0]', f'{piv_pos_poc}.inputCurve')
+
+		piv_loc = bb.create_node('locator', base, ['piv'], number, side)
+		cmds.connectAttr(f'{piv_pos_poc}.result.position ', f'{piv_loc}.t')
+
+		foot_inv_val_mdv = bb.create_node('multiplyDivide', base, ['inv', 'val'], number, side)
+		cmds.connectAttr(f'{piv_jnt}.t', f'{foot_inv_val_mdv}.i1')
+		cmds.setAttr( f'{foot_inv_val_mdv}.i2', -1, -1, -1)
+		cmds.connectAttr(f'{foot_inv_val_mdv}.o', f'{inv_jnt}.t')
+
+		bb.create_constraint([piv_loc], piv_jnt, 'point', maintain_offset=False)
+
+		# ---  Remap Value Nodes ----------------------
+		bank_rmv = bb.create_node('remapValue', base, ['bank'], number, side)
+		cmds.connectAttr(f'{foot_ctrl}.tx', f'{bank_rmv}.inputValue')
+		cmds.setAttr( f'{bank_rmv}.value[0].value_FloatValue', 1)
+		cmds.setAttr( f'{bank_rmv}.value[1].value_FloatValue', 0)
+		cmds.setAttr( f'{bank_rmv}.inputMin', limit_z_val*-1)
+		cmds.setAttr( f'{bank_rmv}.inputMax', limit_z_val)
+		cmds.setAttr( f'{bank_rmv}.outputMin', bank_angle[0])
+		cmds.setAttr( f'{bank_rmv}.outputMax', bank_angle[1])
+		cmds.connectAttr(f'{bank_rmv}.outValue', f'{piv_jnt}.rz')
+
+		roll_rmv = bb.create_node('remapValue', base, ['roll'], number, side)
+		cmds.connectAttr(f'{foot_ctrl}.tz', f'{roll_rmv}.inputValue')
+		cmds.setAttr( f'{roll_rmv}.inputMin', limit_x_val*-1)
+		cmds.setAttr( f'{roll_rmv}.inputMax', limit_x_val)
+		cmds.setAttr( f'{roll_rmv}.outputMin', roll_angle[0])
+		cmds.setAttr( f'{roll_rmv}.outputMax', roll_angle[1])
+		cmds.connectAttr(f'{roll_rmv}.outValue', f'{piv_jnt}.ry')
+
+		toe_rmv = bb.create_node('remapValue', base, ['toe', 'roll'], number, side)
+		cmds.connectAttr(f'{foot_ctrl}.tz', f'{toe_rmv}.inputValue')
+		cmds.setAttr( f'{toe_rmv}.value[0].value_FloatValue', 1)
+		cmds.setAttr( f'{toe_rmv}.value[1].value_FloatValue', 0.5)
+		cmds.setAttr( f'{toe_rmv}.value[1].value_Position', 0.5)
+		cmds.setAttr( f'{toe_rmv}.value[2].value_FloatValue', 1)
+		cmds.setAttr( f'{toe_rmv}.inputMin', 0)
+		cmds.setAttr( f'{toe_rmv}.inputMax', limit_x_val)
+		cmds.setAttr( f'{toe_rmv}.outputMin', roll_angle[0])
+		cmds.setAttr( f'{toe_rmv}.outputMax', 0)
+		cmds.connectAttr(f'{toe_rmv}.outValue', f'{toe_jnt}.ry')
+
+		ball_rmv = bb.create_node('remapValue', base, ['ball', 'roll'], number, side)
+		cmds.connectAttr(f'{foot_ctrl}.tz', f'{ball_rmv}.inputValue')
+		cmds.setAttr( f'{ball_rmv}.value[0].value_FloatValue', 0)
+		cmds.setAttr( f'{ball_rmv}.value[1].value_FloatValue', 0.5)
+		cmds.setAttr( f'{ball_rmv}.value[1].value_Position', 0.5)
+		cmds.setAttr( f'{ball_rmv}.inputMin', 0)
+		cmds.setAttr( f'{ball_rmv}.inputMax', limit_x_val)
+		cmds.setAttr( f'{ball_rmv}.outputMin', 0)
+		cmds.setAttr( f'{ball_rmv}.outputMax', roll_angle[1])
+
+		# ---  Bend Strength Attr ----------------------
+		bend_attr = 'bendStrength'
+		cmds.addAttr( foot_ctrl, ln = bend_attr, at = 'float', min = 0, max = 1, dv = 0.5, k = True )
+		bend_mdl = bb.create_node('multDoubleLinear', base, ['ball', 'bend'], number, side)
+		cmds.connectAttr(f'{foot_ctrl}.{bend_attr}', f'{bend_mdl}.i1')
+		cmds.setAttr( f'{bend_mdl}.i2', 150)
+		cmds.connectAttr(f'{bend_mdl}.o', f'{ball_rmv}.outputMax')
+		cmds.connectAttr(f'{ball_rmv}.outValue', f'{ball_jnt}.ry')
+
+		# --- Connect to Stretch loc ----------------------
+		bb.create_constraint([ankle_jnt], self.stretch_end_loc)
+
+		# ---  Organize ----------------------
+		bb.create_constraint([ankle_jnt], leg_ikh, 'parent')
+		bb.create_constraint([ik_ctrl], foot_crv, 'parent')
+		bb.create_constraint([ik_ctrl], jnt_grp, 'parent')
+		bb.create_constraint([ik_ctrl], ctrl_grp, 'parent')
+		cmds.parent([foot_crv, piv_loc], mod_grp)
+
+		# ---  Foot Poses ----------------------
+		pose_map = {
+			'toeTwist' : [[-45, 45], toe_jnt, 'rx'],
+			'ballTwist' : [[-45, 45], ball_jnt, 'rx'],
+			'heelTwist' : [[-45, 45], heel_jnt, 'rx'] 
+			}
+		for pose, data in pose_map.items():
+			val = data[0]
+			jnt = data[1]
+			axis = data[2]
+			cmds.addAttr( foot_ctrl, ln = pose, at = 'float', min = val[0], max = val[1], dv = 0, k = True )
+			cmds.connectAttr(f'{foot_ctrl}.{pose}', f'{jnt}.{axis}')
+
+		cmds.connectAttr(f'{foot_ctrl}.rx', f'{inv_jnt}.ry')
+		cmds.connectAttr(f'{foot_ctrl}.ry', f'{inv_jnt}.rx')
+		cmds.connectAttr(f'{foot_ctrl}.rz', f'{inv_jnt}.rz')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
