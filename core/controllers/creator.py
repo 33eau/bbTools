@@ -3,7 +3,7 @@ from importlib import reload
 import maya.cmds as cmds # type: ignore
 import maya.mel as mel
 import numpy as np
-# from . import shape_library
+from . import shape_library
 from . import shape_color 
 
 from ..utils import rig_utils as bb
@@ -15,7 +15,7 @@ from ..naming import current_project
 
 reload(bb)
 reload(io)
-#reload(shape_library)
+reload(shape_library)
 reload(constants)
 reload(naming)
 reload(parser)
@@ -31,7 +31,7 @@ NAMER = naming.get_namer(NAME_TEMPLATE)
 SUFFIX = 'ctrl'
 
 CUSTOM_TEMPLATE = 'hatrig'
-CUSTOM_SUFFIX = 'ctl'
+CUSTOM_SUFFIX = 'ctrl'
 
 CTRL_SHAPES = 'ctrl_shapes.ctrlshapes'
 FOLDER_NAME = 'data'
@@ -68,7 +68,7 @@ class Controller:
 					name = '',
 					side = '',
 					offset_names = None,
-					shape = 'crossCircle',
+					shape = 'cross_circle',
 					color = 'red',
 					scale = 1.0,
 					line_width = 1.0,           
@@ -159,7 +159,17 @@ class Controller:
 				self.create_connection(target, active_ctrl)
 				
 				for attr in self.lock_attrs:
-					cmds.setAttr(f'{ctrl}.{attr}', l=False, k=False)
+					if attr == 't':
+						for ax in 'xyz':
+							cmds.setAttr(f'{ctrl}.{attr}{ax}', l=True, k=False)
+					elif attr == 'r':
+						for ax in 'xyz':
+							cmds.setAttr(f'{ctrl}.{attr}{ax}', l=True, k=False)
+					elif attr == 's':
+						for ax in 'xyz':
+							cmds.setAttr(f'{ctrl}.{attr}{ax}', l=True, k=False)
+					else:
+						cmds.setAttr(f'{ctrl}.{attr}', l=True, k=False)
 
 				if self.main_ctrl_grp and cmds.objExists(self.main_ctrl_grp):
 					cmds.parent(top_grp, self.main_ctrl_grp)
@@ -187,7 +197,7 @@ class Controller:
 
 	@staticmethod
 	def create_curve(ctrl_name='', 
-					shape='crossCircle', 
+					shape='cross_circle', 
 					color='red', 
 					line_width=1.0, 
 					scale=1.0, 
@@ -197,7 +207,7 @@ class Controller:
 					close_curve = True,
 					deg=3):
 
-		points = shapes.get(shape, shapes['crossCircle'])
+		points = shapes.get(shape, shapes['cross_circle'])
 		crv = cmds.curve(p=points, d=deg)
 		crv = cmds.rename(crv, ctrl_name)
 		shp = cmds.listRelatives(crv, s=True)[0]
@@ -210,7 +220,9 @@ class Controller:
 		side_for_color = parser.find_element(ctrl_name, 'sides')
 		format_side = parser.format_side(side_for_color, 'upper') or 'C'
 
-		if color == 'sec':
+		if color == 'side':
+			color = shape_color.CTRL_COLOR[format_side]
+		elif color == 'sec':
 			color = shape_color.CTRL_SEC_COLOR[format_side]
 		elif color == 'ter':
 			color = shape_color.CTRL_TER_COLOR[format_side]
@@ -223,9 +235,11 @@ class Controller:
 		bb.scale_shape(crv, scale)
 		bb.move_shape(crv, move)
 		
-
+		rotate_order_enum_name = ':'.join(bb.constants.ROTATE_ORDERS.keys())
+		cmds.addAttr( shp, ln = 'rotateOrder', at = 'enum', en = rotate_order_enum_name , k = True )
 		ro_value = bb.constants.ROTATE_ORDERS.get(rotate_order, 0)
-		cmds.setAttr(f'{crv}.rotateOrder', ro_value)
+		cmds.setAttr( f'{shp}.rotateOrder', ro_value)
+		cmds.connectAttr(f'{shp}.rotateOrder', f'{crv}.rotateOrder')
 
 		return crv
 
@@ -255,7 +269,7 @@ class Controller:
 			return
 		
 		if self.connection_type in ('point', 'parent', 'orient', 'scale', 'parentScale'):
-			bb.create_constrain(parents=[ctrl], target=object, type=self.connection_type)
+			bb.create_constraint(parents=[ctrl], target=object, type=self.connection_type)
 		elif self.connection_type == 'direct':
 			if self.gimbal:
 				cmds.warning(f'Direct Connection works only when moving Gimbal Control: {self.gimbal_ctrl}')
@@ -276,8 +290,8 @@ class SuperRoot:
 		self.ctrl_scale =  ctrl_scale * 4
 		self.line_width = line_width
 
-		self.super_shape = kwargs.get('super_shape', 'directionalSquare')
-		self.placement_shape = kwargs.get('placement_shape', 'arrow1dir')
+		self.super_shape = kwargs.get('super_shape', 'directional_square')
+		self.placement_shape = kwargs.get('placement_shape', 'arrow_one')
 		self.ctrl_color = kwargs.get('ctrl_color', 'yellow')
 
 		self.super_group_name = kwargs.get('super_group_name', 'Rig')
@@ -374,14 +388,14 @@ class SingleControl:
 
 	def build(self, **kwargs):
 		name_data = get_naming_data(obj=self.target_obj)
-		base, element, number, side, suffix = NAMER.extract(self.target_obj)
+		base_name = parser.clean_name(self.target_obj, ['tmp', 'temp'])
+		base, element, number, side, suffix = NAMER.extract(base_name)
 		drive_target = self.target_obj
 	
 		if self.create_joint:
-			base_name = parser.clean_name(base, ['tmp', 'temp'])
 			if self.add_element:
 				element.append(self.add_element)
-			self.bind_jnt = bb.create_node('joint', base_name, element, number, side)
+			self.bind_jnt = bb.create_node('joint', base, element, number, side)
 			if self.bind_parent and cmds.objExists(self.bind_parent):
 				cmds.parent(self.bind_jnt, self.bind_parent)
 			bb.snap([self.target_obj], self.bind_jnt)
@@ -390,7 +404,7 @@ class SingleControl:
 		base_name = NAMER.format(base, element, number, None, None)
 		controller = Controller(
 							objects=[drive_target],
-							name = base_name,
+							#name = base_name,
 							side = side,
 							main_ctrl_grp=self.ctrl_parent,
 							color = self.color,
@@ -405,7 +419,7 @@ class SingleControl:
 			cmds.delete(self.target_obj)
 		
 		if self.upper_driver:
-			bb.create_constrain([self.upper_driver], controller.offset_grps[0][0], 'parentScale')
+			bb.create_constraint([self.upper_driver], controller.offset_grps[0][0], 'parentScale')
 
 		self.ctrl = controller.ctrls[0]
 		self.offset_grps = controller.offset_grps
@@ -508,18 +522,19 @@ def import_ctrl_shapes(search_for=None, replace_with=None, prefix=None, suffix=N
 	print(f'🔻 Imported {imported_len} CtrlShapes from : {path}')	
 
 def new_shape():
-	obj = cmds.ls(sl=True)[0]
-	shape = {}
-	coordinates = []
-	cv = bb.get_cv_count( obj )
+	objs = cmds.ls(sl=True)
+	for obj in objs:
+		shape = {}
+		coordinates = []
+		cv = bb.get_cv_count( obj )
 
-	for i in range( 0, cv):
-		coordinate = cmds.xform( f'{obj}Shape.cv[{i}]', ws = True, t = True, q = True )
-		coordinates.append(tuple(coordinate))
+		for i in range( 0, cv):
+			coordinate = cmds.xform( f'{obj}Shape.cv[{i}]', ws = True, t = True, q = True )
+			coordinates.append(tuple(coordinate))
 
-	coordinates.append(coordinates[0])
-	shape[obj] = coordinates
-	io.export_data(file_name = SHAPE_FILE, data = shape, path = SHAPES_PATH, indent = 4, mode = 'append', log = True)	
+		coordinates.append(coordinates[0])
+		shape[obj] = coordinates
+		io.export_data(file_name = SHAPE_FILE, data = shape, path = SHAPES_PATH, indent = 4, mode = 'append', log = True)	
 
 def redraw( ctrls=None, shape = '', color = 'red', scale = 1.0 ):
 	if not ctrls:
