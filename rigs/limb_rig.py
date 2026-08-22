@@ -106,8 +106,8 @@ class LimbRig:
 			self.side =  side
 
 		if color is None:
-			formatted_side = parser.format_side(self.side, 'upper')
-			color = shape_color.CTRL_COLOR.get(formatted_side, [0,5, 0.5, 0.5])
+			self.formatted_side = parser.format_side(self.side, 'upper')
+			color = shape_color.CTRL_COLOR.get(self.formatted_side, [0,5, 0.5, 0.5])
 			self.color = color
 		else: 
 			self.color =  color 
@@ -576,6 +576,7 @@ class LimbRig:
 		leg_ikh = self.leg_ikh
 		limb_ctrl_grp = self.ctrl_grp
 		limb_mod_grp = self.mod_grp
+		formatted_side = self.formatted_side
 
 		base, element, number, side, suffix = NAMER.extract(foot_crv)
 		ctrl_grp = bb.create_node('group', base, element + ['ctrl'], number, side, p=limb_ctrl_grp)
@@ -583,6 +584,7 @@ class LimbRig:
 		jnt_grp = bb.create_node('group', base, element + ['jnt'], number, side, p=mod_grp)
 
 		cmds.xform(foot_crv, cp=True)
+		bb.freeze(foot_crv)
 		foot_crv_bb = cmds.xform(foot_crv, bb=True, q=True)
 		min_x = foot_crv_bb[0]
 		min_z = foot_crv_bb[2]
@@ -640,9 +642,13 @@ class LimbRig:
 		bb.create_constraint([toe_ik_jnt], toe_bnd_jnt)
 
 		# ---  Create Ctrl ----------------------
+		tmp_orient_loc = bb.create_node('locator', base, ['tmp', 'orient'], number, side)
+		cmds.delete(cmds.orientConstraint(tmp_orient_loc, foot_ctrl_pos_jnt, mo=False))
+		bb.freeze(foot_ctrl_pos_jnt)
+		cmds.delete(tmp_orient_loc)
 		foot_frame_name = NAMER.format(base, element+['frame'], number, side, suffix)
 		ctrl_frame_crv = cmds.duplicate(foot_crv, n=foot_frame_name)[0]
-		cmds.matchTransform(ctrl_frame_crv, foot_ctrl_pos_jnt)
+		cmds.matchTransform(ctrl_frame_crv, foot_ctrl_pos_jnt, pos=True)
 		cmds.setAttr( f'{ctrl_frame_crv}.ove', 1)
 		cmds.setAttr( f'{ctrl_frame_crv}.overrideDisplayType', 1)
 
@@ -700,8 +706,23 @@ class LimbRig:
 		bb.create_constraint([piv_loc], piv_jnt, 'point', maintain_offset=False)
 
 		# ---  Remap Value Nodes ----------------------
+		if formatted_side == 'R':
+			tx_neg_mdl = bb.create_node('multDoubleLinear', base, ['tx', 'neg'], number, side)	
+			cmds.connectAttr(f'{foot_ctrl}.tx', f'{tx_neg_mdl}.i1')
+			cmds.setAttr( f'{tx_neg_mdl}.i2', -1)
+			tz_neg_mdl = bb.create_node('multDoubleLinear', base, ['tz', 'neg'], number, side)	
+			cmds.connectAttr(f'{foot_ctrl}.tz', f'{tz_neg_mdl}.i1')
+			cmds.setAttr( f'{tz_neg_mdl}.i2', -1)
+			tx_output = f'{tx_neg_mdl}.o'
+			tz_output = f'{tz_neg_mdl}.o'
+			negate_val = -1
+		else:
+			tx_output = f'{foot_ctrl}.tx'
+			tz_output = f'{foot_ctrl}.tz'
+			negate_val = 1
+
 		bank_rmv = bb.create_node('remapValue', base, ['bank'], number, side)
-		cmds.connectAttr(f'{foot_ctrl}.tx', f'{bank_rmv}.inputValue')
+		cmds.connectAttr(tx_output, f'{bank_rmv}.inputValue')
 		cmds.setAttr( f'{bank_rmv}.value[0].value_FloatValue', 1)
 		cmds.setAttr( f'{bank_rmv}.value[1].value_FloatValue', 0)
 		cmds.setAttr( f'{bank_rmv}.inputMin', limit_z_val*-1)
@@ -711,15 +732,15 @@ class LimbRig:
 		cmds.connectAttr(f'{bank_rmv}.outValue', f'{piv_jnt}.rz')
 
 		roll_rmv = bb.create_node('remapValue', base, ['roll'], number, side)
-		cmds.connectAttr(f'{foot_ctrl}.tz', f'{roll_rmv}.inputValue')
+		cmds.connectAttr(tz_output, f'{roll_rmv}.inputValue')
 		cmds.setAttr( f'{roll_rmv}.inputMin', limit_x_val*-1)
 		cmds.setAttr( f'{roll_rmv}.inputMax', limit_x_val)
-		cmds.setAttr( f'{roll_rmv}.outputMin', roll_angle[0])
-		cmds.setAttr( f'{roll_rmv}.outputMax', roll_angle[1])
+		cmds.setAttr( f'{roll_rmv}.outputMin', roll_angle[0] * negate_val)
+		cmds.setAttr( f'{roll_rmv}.outputMax', roll_angle[1] * negate_val)
 		cmds.connectAttr(f'{roll_rmv}.outValue', f'{piv_jnt}.ry')
 
 		toe_rmv = bb.create_node('remapValue', base, ['toe', 'roll'], number, side)
-		cmds.connectAttr(f'{foot_ctrl}.tz', f'{toe_rmv}.inputValue')
+		cmds.connectAttr(tz_output, f'{toe_rmv}.inputValue')
 		cmds.setAttr( f'{toe_rmv}.value[0].value_FloatValue', 1)
 		cmds.setAttr( f'{toe_rmv}.value[1].value_FloatValue', 0.5)
 		cmds.setAttr( f'{toe_rmv}.value[1].value_Position', 0.5)
@@ -731,7 +752,7 @@ class LimbRig:
 		cmds.connectAttr(f'{toe_rmv}.outValue', f'{toe_jnt}.ry')
 
 		ball_rmv = bb.create_node('remapValue', base, ['ball', 'roll'], number, side)
-		cmds.connectAttr(f'{foot_ctrl}.tz', f'{ball_rmv}.inputValue')
+		cmds.connectAttr(tz_output, f'{ball_rmv}.inputValue')
 		cmds.setAttr( f'{ball_rmv}.value[0].value_FloatValue', 0)
 		cmds.setAttr( f'{ball_rmv}.value[1].value_FloatValue', 0.5)
 		cmds.setAttr( f'{ball_rmv}.value[1].value_Position', 0.5)
@@ -770,7 +791,14 @@ class LimbRig:
 			jnt = data[1]
 			axis = data[2]
 			cmds.addAttr( foot_ctrl, ln = pose, at = 'float', min = val[0], max = val[1], dv = 0, k = True )
-			cmds.connectAttr(f'{foot_ctrl}.{pose}', f'{jnt}.{axis}')
+			if formatted_side == 'R':
+				inv_val_mdl = bb.create_node('multDoubleLinear', base, [pose, 'inv'], number, side)
+				cmds.connectAttr(f'{foot_ctrl}.{pose}', f'{inv_val_mdl}.i1')
+				cmds.setAttr( f'{inv_val_mdl}.i2', -1)
+				output_val = f'{inv_val_mdl}.o'
+			else:
+				output_val = f'{foot_ctrl}.{pose}'
+			cmds.connectAttr(output_val, f'{jnt}.{axis}')
 
 		cmds.connectAttr(f'{foot_ctrl}.rx', f'{inv_jnt}.ry')
 		cmds.connectAttr(f'{foot_ctrl}.ry', f'{inv_jnt}.rx')
