@@ -1,4 +1,4 @@
-ik_base_ctrl_shape = 'box'
+ik_base_ctrl_shape = 'cube'
 ik_ctrl_shape = 'box'
 fk_ctrl_shape = 'cross_circle'
 switch_ctrl_shape = 'square_round_cross'
