@@ -41,7 +41,7 @@ def UI():
 
 	cmds.gridLayout(nc = 15, nr =5, cellWidthHeight=(30, 30), p=main_layout)
 	for col in COLORS.keys():
-		cmds.button( label='', bgc = COLORS[col], c = partial( set_color_wrapper, col, viewport_checkBox, outliner_checkBox ), statusBarMessage = col)
+		cmds.button( label='', bgc = COLORS[col], c = partial( set_color_wrapper, col, viewport_checkBox, outliner_checkBox ), statusBarMessage = col, annotation = col)
 	
 	cmds.setParent(main_layout)
 	reset_type = cmds.rowLayout('resetType', nc = 2, columnWidth2=(223.5,223.5),columnAlign=(1, 'right'), columnAttach=[(1, 'both', 0), (2, 'both', 0)])
