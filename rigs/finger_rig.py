@@ -38,7 +38,7 @@ NAMER = naming.get_namer(NAME_TEMPLATE)
 # Finger pose dictionary json generator
 def finger_pose_data(
 		pose = 'fist',
-		finger_ctrls = ['l_pinky_tmp_01_ctl', 'l_ring_tmp_04_ctl', 'l_index_tmp_02_ctl', 'l_ring_tmp_01_ctl', 'l_index_tmp_03_ctl', 'l_middle_tmp_03_ctl', 'l_pinky_tmp_02_ctl', 'l_thumb_tmp_01_ctl', 'l_pinky_tmp_03_ctl', 'l_middle_tmp_04_ctl', 'l_middle_tmp_01_ctl', 'l_thumb_tmp_03_ctl', 'l_index_tmp_01_ctl', 'l_middle_tmp_02_ctl', 'l_pinky_tmp_04_ctl', 'l_thumb_tmp_02_ctl', 'l_ring_tmp_02_ctl', 'l_index_tmp_04_ctl', 'l_ring_tmp_03_ctl'],
+		finger_ctrls = ['l_thumb_03_fk_ctrl', 'l_index_02_fk_ctrl', 'l_thumb_bnd_01_ctrl', 'l_index_03_fk_ctrl', 'l_thumb_02_fk_ctrl', 'l_thumb_04_fk_ctrl', 'l_index_bnd_01_ctrl', 'l_index_04_fk_ctrl'],
 		log = False,
 		export = True
 	): #26Jan04
@@ -229,7 +229,7 @@ class FingerRig:
 						stretch_attr = self.stretch_attr,
 						squash_attr = self.squash_attr,
 						rig_end_joint = False,
-						shape_rotation = [0, 0, 90],
+						shape_rotation = self.shape_rotation,
 						upper_driver = self.upper_driver
 						)
 				self.ctrl_dict[self.finger_names[i]] = finger_fk.ctrls
@@ -263,7 +263,7 @@ class FingerRig:
 												color = self.color, 
 												shape = FK_BASE_CTRL_SHAPE,
 												connection_type = 'matrix_parent',
-												shape_rotation = [90, 90, 0],
+												shape_rotation = self.shape_rotation,
 												global_scale = self.global_scale,
 												create_joint = True,
 												add_element = 'bnd')
@@ -305,13 +305,14 @@ class FingerRig:
 									bind_parent=self.bind_parent, 
 									ctrl_parent=self.ctrl_parent, 
 									connection_type = 'matrix_parent',
-									scale = self.scale * 4, 
+									scale = self.scale, 
 									color = self.color, 
 									shape = FK_BASE_CTRL_SHAPE,
-									shape_rotation = [90, 90, 0],
+									shape_rotation = self.shape_rotation,
 									global_scale = self.global_scale,
 									create_joint = True,
-									add_element = 'bnd')
+									add_element = 'bnd',
+									line_width = 2)
 
 					fkIk_rig_jnts = finger[1:]
 					finger_rig = fkIk.FkIkRig(joints = fkIk_rig_jnts,
@@ -343,7 +344,8 @@ class FingerRig:
 						default_ik_end = self.default_ik_end,
 						create_bind_joint = True,
 						rig_end_joint=False,
-						base_parent_type = 'parent')
+						base_parent_type = 'parent',
+						shape_rotation = self.shape_rotation)
 					self.ctrl_dict[self.finger_names[i]] = [base_rig.ctrl] + [finger_rig.ctrl_dict]
 					cmds.parent(base_rig.offset_grps[0], self.ctrl_grp)
 				self._setup_finger_poses(self.pose_ctrl)
