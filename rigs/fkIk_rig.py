@@ -200,7 +200,7 @@ class FkIkRig:
 						color = self.color,
 						connection_type = 'None',
 						ctrl_parent = self.ctrl_grp,
-						scale = self.scale * 1.3,
+						scale = self.scale,
 						rotate_order = self.rotate_order,
 						shape_rotation = self.shape_rotation ,
 						rig_end_joint=self.rig_end_joint
