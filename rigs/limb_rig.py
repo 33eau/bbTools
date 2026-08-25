@@ -69,6 +69,8 @@ class LimbRig:
 				default_ik_base = 0,
 				default_ik_end = 1,
 				is_leg = False,
+				ik_base_shape_rotation = [0, 0, 0],
+				ik_end_shape_rotation = [0, 0, 0],
 				**controller_kwargs
 				):
 		
@@ -98,6 +100,8 @@ class LimbRig:
 		self.default_ik_base =  default_ik_base
 		self.default_ik_end =  default_ik_end
 		self.is_leg =  is_leg
+		self.ik_base_shape_rotation = ik_base_shape_rotation
+		self.ik_end_shape_rotation = ik_end_shape_rotation
 		self.controller_kwargs =  controller_kwargs
 	
 		if side is None :
@@ -203,6 +207,8 @@ class LimbRig:
 						default_ik_base = self.default_ik_base,
 						default_ik_end = self.default_ik_end,
 						pv_shape = IK_PV_CTRL_SHAPE,
+						ik_base_shape_rotation = self.ik_base_shape_rotation,
+						ik_end_shape_rotation = self.ik_end_shape_rotation,
 						is_leg=self.is_leg
 						)
 		ik_grps = ik_rig.mod_grp
